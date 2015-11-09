@@ -17,3 +17,5 @@ debug-assertions = false
 [features]
 
 strict_alignment = []
+automatic_padding = []
+experimental_lense_enums = ["automatic_padding"]

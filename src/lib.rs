@@ -1,59 +1,63 @@
-#[macro_use] mod prim;
-mod iterator;
-mod pool;
+#![feature(slice_patterns)]
+
+//! MIT 2015 DarkFox
+
+#[macro_use]
+mod prim;
 mod file;
+mod seekable;
 mod aligned;
 
-pub use iterator::{Iter, IterMut};
-pub use aligned::Aligned;
-pub use pool::AlignedPool;
+pub use seekable::{IterRef, IterMut, SeekablePool};
+pub use file::LenseFile;
 
-pub trait Lense<'a> {
+/// Core lense trait
+pub trait Lense {
     fn size() -> usize;
+    // alignment?
 }
 
-pub trait LenseRef<'a>: Lense<'a> {
+pub trait SliceRef<'a>: Lense {
     type Ref;
     fn slice<B: Dice<'a>>(&mut B) -> Self::Ref;
 }
 
-pub trait LenseMut<'a>: Lense<'a> {
+pub trait SliceMut<'a>: Lense {
     type Mut;
     fn slice_mut<B: DiceMut<'a>>(&mut B) -> Self::Mut;
 }
 
 pub trait Dice<'a>: Sized {
-    fn slice<L: Lense<'a>>(&mut self) -> &'a L;
+    fn dice<L: Lense>(&mut self) -> &'a L;
     fn size(&self) -> usize;
 }
 
 pub trait DiceMut<'a>: Dice<'a> {
-    fn slice_mut<L: Lense<'a>>(&mut self) -> &'a mut L;
+    fn dice_mut<L: Lense>(&mut self) -> &'a mut L;
 }
 
 macro_rules! mk_dice {
     (mut $ty:ty, $x:expr, $split:ident) => (
         mk_dice!{$ty, $x, $split}
         impl<'a> DiceMut<'a> for $ty {
-            fn slice_mut<L: Lense<'a>>(&mut self) -> &'a mut L {
-                let mut x: $ty = $x;
-                ::std::mem::swap(&mut x, self);
-                let (v, rest) = x.$split(L::size());
-                *self = rest;
-                unsafe { &mut *(v.as_ptr() as *mut L) }
+            #[inline]
+            fn dice_mut<L: Lense>(&mut self) -> &'a mut L {
+                let (head, tail) = ::std::mem::replace(self, $x).$split(L::size());
+                *self = tail;
+                unsafe { &mut *(head.as_ptr() as *mut L) }
             }
         }
     );
     ($ty:ty, $x:expr, $split:ident) => (
         impl<'a> Dice<'a> for $ty {
-            fn slice<L: Lense<'a>>(&mut self) -> &'a L {
-                let mut x: $ty = $x;
-                ::std::mem::swap(&mut x, self);
-                let (v, rest) = x.$split(L::size());
-                *self = rest;
-                unsafe { &*(v.as_ptr() as *const L) }
+            #[inline]
+            fn dice<L: Lense>(&mut self) -> &'a L {
+                let (head, tail) = ::std::mem::replace(self, $x).$split(L::size());
+                *self = tail;
+                unsafe { &*(head.as_ptr() as *const L) }
             }
 
+            #[inline]
             fn size(&self) -> usize {
                 self.len()
             }
