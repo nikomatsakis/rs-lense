@@ -16,25 +16,25 @@ enum CacheEntry {
 }
 
 pub struct LenseFile<L: Lense> {
-    file: File,
+    file: Option<File>,
     pool: SeekablePool<L>,
     cache: HashMap<usize, CacheEntry>,
     policy: PoolPolicy,
 }
 
 impl<L> LenseFile<L> where L: Lense {
-    pub fn from_file(file: File, cap: usize) -> Self {
+    pub fn with_capacity(cap: usize) -> Self {
         LenseFile {
-            file: file,
+            file: None,
             pool: SeekablePool::with_capacity(cap),
             cache: HashMap::with_capacity(cap),
             policy: PoolPolicy::Strict,
         }
     }
 
-    pub fn init(&mut self) -> io::Result<usize> {
+    pub fn read_file(&mut self, file: &mut File) -> io::Result<usize> {
         match self.policy {
-            PoolPolicy::Strict => self.file.read(&mut *self.pool),
+            PoolPolicy::Strict => file.read(&mut *self),
         }
     }
 
@@ -84,44 +84,5 @@ impl<L: Lense> ::std::ops::Deref for LenseFile<L> {
 impl<L: Lense> ::std::ops::DerefMut for LenseFile<L> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.pool
-    }
-}
-
-#[cfg(test)]
-mod test{
-    use std::fs::File;
-    use super::*;
-    use Lense;
-
-    mk_lense_ty!{struct Alice ref
-        a:  u8,        // a
-        bc: (u8, u16), // b c
-        dg: [u8; 4],   // d e f g
-        h:  u64,       // h
-    }
-
-    // ~ $ hexdump -C lense-testing-file.dat
-    // 00000000  00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f
-    // *
-    // 00000050
-    //           a. b. c. .. d. e. f. g.  h. .. .. .. .. .. .. ..
-
-    #[test]
-    fn read_lense_file() {
-        let mut f = LenseFile::<Alice>::from_file(File::open("lense-testing-file.dat").unwrap(), 5);
-
-        assert_eq!(f.init().unwrap(), Alice::size() * 5);
-
-        for guard in f.iter() {
-            let Alice { a, bc: (b, c), dg: [d, e, f, g], h } = *guard;
-            assert_eq!(*a, 0);
-            assert_eq!(*b, 1);
-            assert_eq!(*c, 0x0302);
-            assert_eq!(*d, 4);
-            assert_eq!(*e, 5);
-            assert_eq!(*f, 6);
-            assert_eq!(*g, 7);
-            assert_eq!(*h, 0xF0E0D0C0B0A0908);
-        }
     }
 }

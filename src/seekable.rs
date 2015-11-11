@@ -175,7 +175,7 @@ mod test {
         let pool = SeekablePool::<u8>::with_capacity(1);
         if let Some(_guard) = pool.lense(0) {
             assert!(pool.lense(0).is_none());
-        }
+        } else { unreachable!() }
         assert!(pool.lense(0).is_some());
     }
 }

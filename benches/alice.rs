@@ -100,4 +100,20 @@ bench!{
             }
         }
     }
+
+    fn u64_64k_iter(pool) for U64x32x32 * 16 {
+        for guard in pool.iter() {
+            black_box(guard);
+        }
+    }
+
+    fn u64_64k_iter_mut(mut pool) for U64x32x32 * 16 {
+        for mut guard in pool.iter_mut() {
+            for i in 0..32 {
+                for j in 0..32 {
+                    *guard[i][j] = 1u64;
+                }
+            }
+        }
+    }
 }

@@ -55,7 +55,8 @@ Room for improvement
   - [ ] Lint to complain when ordering is suboptimal
 - Safety checks
   - [x] Iterators perform length checks before slicing the buffer
-    - [ ] Automatic padding occurs at runtime and skips this check
+    - [ ] Automatic padding occurs at runtime and **doesn't perform this
+      extended check**
 
 Lense safe types
 ----------------
@@ -70,25 +71,63 @@ Traits
 **Dice**: Chop the current slice into two segments, advance the slice and
 return the lense.
 
-**Slice**: Wrapper around `Dice` for primitive and compositive types.
-
-Safety policy
--------------
-
-The **only** unsafe code in `lense` is defined in the `Dice` trait in order to
-cast the raw pointers, to the appropriate lense-safe types.
-
-The **ONLY** unsafe code is defined in the `Dice` trait and for performance
-reasons neither `Dice` nor `Slice` perform length checks on the buffer.
-Instead, length checks occur in `Iter` and `IterMut` which inherently also
-applies to the `LenseFile` struct.
+**Slice**: Wrapper around `Dice` for primitive and composed types.
 
 Usage
 -----
 
-**This section needs to be re-written due to updates**
+The following example is `examples/file.rs` and can be ran with `cargo run --example file`
 
-The following example is `examples/alice.rs` and can be ran with `cargo run --example alice`
+```rust
+#[macro_use] extern crate lense;
+
+use std::fs::File;
+use lense::{Lense, LenseFile};
+
+mk_lense_ty!{pub struct AliceRef ref
+    a:  u8,        // 1
+    bc: (u8, u16), // 3
+    d:  u32,       // 4
+    e:  u64,       // 8
+} // 1 + 3 + 4 + 8 = 16
+
+// ~lense.git $ hexdump -C lense-testing-file.dat
+// 00000000  00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f
+// *
+// 00000050
+//           a. b. c. .. d. .. .. ..  e. .. .. .. .. .. .. ..
+
+fn main() {
+    // Open a testing file containing the raw binary as displayed above with hexdump.
+    let mut file = File::open("lense-testing-file.dat").unwrap();
+    // Prepare a SeekablePool with the capcity to store 5 instances of AliceRef.
+    let mut lf = LenseFile::<AliceRef>::with_capacity(5);
+
+    // Read the contents of the file 'lense-testing-file.dat' into the pool and assert
+    // that we read exactly AliceRef::size() * 5 which has filled the pool. This file
+    // *could* contain more entries and they would be ignored by this stage.
+    assert_eq!(lf.read_file(&mut file).unwrap(), AliceRef::size() * 5);
+
+    for guard in lf.iter() {
+        // The guard locks the current index because we currently own the access.
+
+        // Deconstruct the AliceRef struct into the respective fields for quick access.
+        let AliceRef { a, bc: (b, c), d, e } = *guard;
+
+        // Dump all values directly to stdout.
+        println!("a: {}, b: {}, c: {}, d: {}, e: {}",
+                 *a, *b, *c, *d, *e);
+
+        // The guard is dropped and the current index is unlocked.
+    }
+
+    // The file is dropped and the pool is destroyed.
+}
+```
+
+<!--
+
+**Old example, needs updating**
 
 ```rust
 #[macro_use] extern crate lense;
@@ -169,17 +208,25 @@ Mutated result:
    1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
 ```
 
+-->
+
 Benchmarks
 ----------
 
 ```
-Linux livecd 3.18.9-hardened #1 SMP x86_64 GNU/Linux
-Intel(R) Atom(TM) CPU N450 @ 1.66GHz GenuineIntel
+Linux gentoo #3 SMP x86_64 Intel(R)
+Core(TM) i5-4250U CPU @ 1.30GHz GenuineIntel
 ```
+
 ```
-running 4 tests
-test alice_writer     ... bench:          10 ns/iter (+/- 1) = 1500 MB/s
-test alice_x3_reader  ... bench:         132 ns/iter (+/- 7) = 340 MB/s
-test u64x32x32_reader ... bench:       8,677 ns/iter (+/- 182) = 944 MB/s
-test u64x32x32_writer ... bench:       9,655 ns/iter (+/- 288) = 848 MB/s
+running 7 tests
+test struct_alice_x3_iter    ... bench:          19 ns/iter (+/- 1) = 2526 MB/s
+test tuple_alice_x3_iter     ... bench:          19 ns/iter (+/- 0) = 2526 MB/s
+test tuple_alice_x3_iter_mut ... bench:          25 ns/iter (+/- 0) = 1920 MB/s
+test u64_64k_iter            ... bench:      23,064 ns/iter (+/- 398) = 5682 MB/s
+test u64_64k_iter_mut        ... bench:      26,075 ns/iter (+/- 91) = 5026 MB/s
+test u64_8k_iter             ... bench:      11,596 ns/iter (+/- 117) = 5651 MB/s
+test u64_8k_iter_mut         ... bench:      13,126 ns/iter (+/- 58) = 4992 MB/s
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 7 measured
 ```

@@ -9,10 +9,11 @@ mk_lense_ty!{pub struct AliceRef ref
     e:  u64,       // 8
 } // 1 + 3 + 4 + 8 = 16
 
+type TupleAlice = (u8, (u8, u16), u32, u64);
+
 #[test]
 fn tuple_alice_iter() {
-    type FakeAlice = (u8, (u8, u16), u32, u64);
-    let pool = SeekablePool::<FakeAlice>::with_capacity(1);
+    let pool = SeekablePool::<TupleAlice>::with_capacity(1);
     for guard in pool.iter() {
         let (a, (b, c), d, e) = *guard;
         assert_eq!(*a, 0u8);
