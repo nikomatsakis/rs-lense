@@ -1,22 +1,25 @@
-use {Lense, Dice, DiceMut};
+use {DiceRef, DiceMut, Lense};
 
+/// Enforce alignment when dicing
 pub struct Aligned<D> {
     state: D,
     len: usize,
 }
 
-impl<'a, D> Aligned<D> where D: Dice<'a> {
+impl<D: DiceRef> Aligned<D> {
     #[cfg(not(feature = "automatic_padding"))]
+    /// Automatic padding is disabled; ignore Aligned and just use the raw Dice.
     pub fn new(b: D) -> D {
         b
     }
 
     #[cfg(feature = "automatic_padding")]
+    /// Automatic padding is enabled; wrap the raw Dice and track alignment.
     pub fn new(b: D) -> Aligned<D> {
         Aligned { state: b, len: 0 }
     }
 
-    fn align_to(&mut self, size: usize) {
+    fn align_to(&mut self, size: usize) where D: DiceRef {
         let offset = self.len % size;
 
 //      debug_assert!(self.align >= size,
@@ -42,28 +45,23 @@ impl<'a, D> Aligned<D> where D: Dice<'a> {
         }
     }
 
-    fn waste(&self) -> usize {
-        0
-    }
+//  fn waste(&self) -> usize {
+//      0
+//  }
 }
 
-impl<'a, D> DiceMut<'a> for Aligned<D> where D: DiceMut<'a> {
+impl<D: DiceMut> DiceMut for Aligned<D> {
     #[inline]
-    fn dice_mut<L: Lense>(&mut self) -> &'a mut L {
+    fn dice_mut<'a, L: Lense>(&mut self) -> &'a mut L {
         self.align_to(L::size());
         self.state.dice_mut()
     }
 }
 
-impl<'a, D> Dice<'a> for Aligned<D> where D: Dice<'a> {
+impl<D: DiceRef> DiceRef for Aligned<D> {
     #[inline]
-    fn dice<L: Lense>(&mut self) -> &'a L {
+    fn dice<'a, L: Lense>(&mut self) -> &'a L {
         self.align_to(L::size());
         self.state.dice()
-    }
-
-    #[inline]
-    fn size(&self) -> usize {
-        self.state.size() + self.waste()
     }
 }

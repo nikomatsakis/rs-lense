@@ -65,14 +65,6 @@ A type is lense-safe if it is `Sized` and does not contain any pointers.
 Consequently primitive and compositional types are lense-safe while `Vec` and
 `HashMap` are not.
 
-Traits
-------
-
-**Dice**: Chop the current slice into two segments, advance the slice and
-return the lense.
-
-**Slice**: Wrapper around `Dice` for primitive and composed types.
-
 Usage
 -----
 
@@ -82,14 +74,19 @@ The following example is `examples/file.rs` and can be ran with `cargo run --exa
 #[macro_use] extern crate lense;
 
 use std::fs::File;
-use lense::{Lense, LenseFile};
+use std::io::{Seek, SeekFrom};
+use lense::{Lense, LenseFile, IsRef};
 
-mk_lense_ty!{pub struct AliceRef ref
-    a:  u8,        // 1
+mk_lense_struct!{pub struct Alice:
+    /// Fields may be documented
+    pub a:  u8,    // 1
     bc: (u8, u16), // 3
     d:  u32,       // 4
     e:  u64,       // 8
 } // 1 + 3 + 4 + 8 = 16
+
+// This lense can also be represented as a simple tuple:
+// type Alice = (u8, (u8, u16), u32, u64);
 
 // ~lense.git $ hexdump -C lense-testing-file.dat
 // 00000000  00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f
@@ -100,19 +97,43 @@ mk_lense_ty!{pub struct AliceRef ref
 fn main() {
     // Open a testing file containing the raw binary as displayed above with hexdump.
     let mut file = File::open("lense-testing-file.dat").unwrap();
-    // Prepare a SeekablePool with the capcity to store 5 instances of AliceRef.
-    let mut lf = LenseFile::<AliceRef>::with_capacity(5);
+    // Prepare a SeekablePool with the capcity to store 5 instances of Alice.
+    let mut lf = LenseFile::<Alice<_>>::with_capacity(5);
 
-    // Read the contents of the file 'lense-testing-file.dat' into the pool and assert
-    // that we read exactly AliceRef::size() * 5 which has filled the pool. This file
-    // *could* contain more entries and they would be ignored by this stage.
-    assert_eq!(lf.read_file(&mut file).unwrap(), AliceRef::size() * 5);
+    // Seek the file past the first 2 entries.
+    let _current_position = file.seek(SeekFrom::Start(Alice::<IsRef>::size() as u64 * 2));
 
+    // Read the remaining 3 entries directly into the pool and assert that we read exactly
+    // Alice::size() * 3.
+    assert_eq!(lf.read_file(&mut file).unwrap(), Alice::<IsRef>::size() * 3);
+
+    // New scope to manually iterate over the pool and mutate relevent entries.
+    {
+        // Skip two entries, then increment the first value of the third by 5.
+        let mut it = lf.iter_mut().skip(2);
+        if let Some(mut guard) = it.next() {
+            let Alice { ref mut a, .. } = *guard;
+            **a += 5;
+        }
+
+        // Create the 4th entry manually.
+        if let Some(mut guard) = it.next() {
+            let Alice { ref mut a, bc: (ref mut b, ref mut c), ref mut d, ref mut e }
+                = *guard;
+            **a = 2;
+            **b = 4;
+            **c = 8;
+            **d = 16;
+            **e = 32;
+        }
+    }
+
+    // Iterate over all entries currently stored in the pool
     for guard in lf.iter() {
         // The guard locks the current index because we currently own the access.
 
         // Deconstruct the AliceRef struct into the respective fields for quick access.
-        let AliceRef { a, bc: (b, c), d, e } = *guard;
+        let Alice { a, bc: (b, c), d, e } = *guard;
 
         // Dump all values directly to stdout.
         println!("a: {}, b: {}, c: {}, d: {}, e: {}",
@@ -125,91 +146,6 @@ fn main() {
 }
 ```
 
-<!--
-
-**Old example, needs updating**
-
-```rust
-#[macro_use] extern crate lense;
-use lense::*;
-
-// Public struct Alice
-lense_struct!{pub Alice:
-    a:  u8,
-    b: (u8, u8),
-    c: [u8; 4],
-    d: u64,
-}
-
-// Private struct Bob
-lense_struct!{Bob:
-    // Note the <'a> is inherited from struct Alice<'a> in which we don't see. This allows us to
-    // work on our own struct types directly
-    a: Alice<'a>,
-}
-
-fn main() {
-    // Buffer containing 3x Alice
-    let mut alice = vec![0x00, // a[0].a
-                         0x01, 0x02, // a[0].b
-                         0x03, 0x04, 0x05, 0x06, // a[0].c
-                         0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, // a[0].d
-                         0x00, // ...
-                         0x01, 0x02,
-                         0x03, 0x04, 0x05, 0x06,
-                         0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
-                         0x00,
-                         0x01, 0x02,
-                         0x03, 0x04, 0x05, 0x06,
-                         0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
-                         ];
-
-    // New vector of Alice::size() ready to be used.
-    let mut alice_writer = vec![0u8; Alice::size()];
-    { // Populate our new vector using a lense
-        let (mut alice_writer_lense, rest) = Alice::new(&mut alice_writer);
-        assert!(rest.len() == 0);
-        *alice_writer_lense.a = 0;
-        *alice_writer_lense.b.0 = 0x01;
-        *alice_writer_lense.b.1 = 0x02;
-        *alice_writer_lense.c[0] = 0x03;
-        *alice_writer_lense.c[1] = 0x04;
-        *alice_writer_lense.c[2] = 0x05;
-        *alice_writer_lense.c[3] = 0x06;
-        *alice_writer_lense.d = 1012478732780767239;
-    }
-
-    // Check that our manually populated Alice is identical to the first Alice in the vector 'a'
-    assert!(&*alice_writer == &alice[0..Alice::size()]);
-
-    { // Read each Alice from 'a'
-        let mut remaining = &mut *alice;
-        while let Ok(Some(mut a)) = Alice::from_buf(&mut remaining) {
-            *a.a += 1;
-            println!("a: {}; b: {:?}; c: {:?}; d: {}", *a.a, a.b, a.c, *a.d);
-        }
-        // If there is any excess, it is still accessible through the 'remaining' variable.
-        // Alternatively this can be used as a starting point in a pool that owns some
-        // preallocated-large buffer.
-    }
-
-    println!("Mutated result: {:?}", &*alice);
-}
-
-```
-Output altered for viewing
-```
-a: 1; b: (1, 2); c: [3, 4, 5, 6]; d: 1012478732780767239
-a: 1; b: (1, 2); c: [3, 4, 5, 6]; d: 1012478732780767239
-a: 1; b: (1, 2); c: [3, 4, 5, 6]; d: 1012478732780767239
-Mutated result:
-  [1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-   1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-   1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-```
-
--->
-
 Benchmarks
 ----------
 
@@ -219,14 +155,15 @@ Core(TM) i5-4250U CPU @ 1.30GHz GenuineIntel
 ```
 
 ```
-running 7 tests
-test struct_alice_x3_iter    ... bench:          19 ns/iter (+/- 1) = 2526 MB/s
-test tuple_alice_x3_iter     ... bench:          19 ns/iter (+/- 0) = 2526 MB/s
-test tuple_alice_x3_iter_mut ... bench:          25 ns/iter (+/- 0) = 1920 MB/s
-test u64_64k_iter            ... bench:      23,064 ns/iter (+/- 398) = 5682 MB/s
-test u64_64k_iter_mut        ... bench:      26,075 ns/iter (+/- 91) = 5026 MB/s
-test u64_8k_iter             ... bench:      11,596 ns/iter (+/- 117) = 5651 MB/s
-test u64_8k_iter_mut         ... bench:      13,126 ns/iter (+/- 58) = 4992 MB/s
+running 8 tests
+test struct_alice_x3_iter     ... bench:          19 ns/iter (+/- 0) = 2526 MB/s
+test struct_alice_x3_iter_mut ... bench:          25 ns/iter (+/- 0) = 1920 MB/s
+test tuple_alice_x3_iter      ... bench:          19 ns/iter (+/- 0) = 2526 MB/s
+test tuple_alice_x3_iter_mut  ... bench:          25 ns/iter (+/- 0) = 1920 MB/s
+test u64_64k_iter             ... bench:      22,737 ns/iter (+/- 195) = 5764 MB/s
+test u64_64k_iter_mut         ... bench:      25,806 ns/iter (+/- 229) = 5079 MB/s
+test u64_8k_iter              ... bench:      11,427 ns/iter (+/- 150) = 5735 MB/s
+test u64_8k_iter_mut          ... bench:      12,966 ns/iter (+/- 47) = 5054 MB/s
 
-test result: ok. 0 passed; 0 failed; 0 ignored; 7 measured
+test result: ok. 0 passed; 0 failed; 0 ignored; 8 measured
 ```

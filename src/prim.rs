@@ -1,160 +1,103 @@
-#[macro_export]
+use {DiceRef, DiceMut, Lense, LenseMut, RefMut, Mode, IsRef, IsMut};
+
 macro_rules! mk_lense_ty {
     (@void $void:tt $expr:expr) => { $expr };
 
-    (tuple $($ty:ident)*)
-        => { mk_lense_ty!{() tuple $($ty)* } };
-    (array $($n:tt)*)
-        => { mk_lense_ty!{[] $(($n))*} };
-    (pub struct $ident:ident $ref_mut:tt $($field:ident: $ty:ty),* $(,)*)
-        => { mk_lense_ty!{{} public $ident $ref_mut $($field: $ty),* } };
-    (struct $ident:ident $ref_mut:tt $($field:ident: $ty:ty),* $(,)*)
-        => { mk_lense_ty!{{} private $ident $ref_mut $($field: $ty),* } };
-
-    (prim $($ty:ty)+) => {$(
-        impl<'a> $crate::Lense for $ty {
-            #[inline]
-            fn size() -> usize { ::std::mem::size_of::<$ty>() }
+    (tuple $($ty:ident)*) => { mk_lense_ty!{ () void $($ty)* } };
+    (array $($tt:tt)*) => { mk_lense_ty!{ [] L $(($tt))* } };
+    (prim $($ty:ty)*) => {$(
+        impl<'a> RefMut<'a> for $ty {
+            type Ref = &'a $ty;
+            type Mut = &'a mut $ty;
         }
 
-        impl<'a> $crate::SliceRef<'a> for $ty {
-            type Ref = &'a $ty;
+        impl<'a> Lense for $ty {
+            type Ref = <$ty as RefMut<'a>>::Ref;
 
             #[inline]
-            fn slice<L: $crate::Dice<'a>>(buf: &mut L) -> Self::Ref {
+            fn size() -> usize {
+                ::std::mem::size_of::<Self>()
+            }
+
+            #[inline]
+            #[allow(unused_variables)]
+            fn lense<Buf: DiceRef>(buf: &mut Buf) -> Self::Ref {
                 buf.dice::<Self>()
             }
         }
 
-        impl<'a> $crate::SliceMut<'a> for $ty {
-            type Mut = &'a mut $ty;
+        impl<'a> LenseMut for $ty {
+            type Mut = <$ty as RefMut<'a>>::Mut;
 
             #[inline]
-            fn slice_mut<L: $crate::DiceMut<'a>>(buf: &mut L) -> Self::Mut {
+            #[allow(unused_variables)]
+            fn lense_mut<Buf: DiceMut>(buf: &mut Buf) -> Self::Mut {
                 buf.dice_mut::<Self>()
             }
         }
-    )+};
+    )*};
 
     (()) => { };
-    (() $head:ident $($ty:ident)*) => {
-        impl<'a, $($ty: 'a + $crate::Lense),*> $crate::Lense for ($($ty,)*) {
+    (() $head:tt $($tail:ident)*) => {
+        impl<$($tail: Lense),*> Lense for ($($tail,)*) {
+            type Ref = ($(<$tail as Mode<IsRef>>::Return,)*);
+
             #[inline]
             fn size() -> usize {
-                0usize $(+ $ty::size())*
+                0usize $(+ <$tail>::size())*
             }
-        }
 
-        impl<'a, $($ty: 'a + $crate::SliceRef<'a>),*> $crate::SliceRef<'a> for ($($ty,)*) {
-            type Ref = ($($ty::Ref,)*);
-
-            #[allow(unused_variables)]
             #[inline]
-            fn slice<BB: $crate::Dice<'a>>(buf: &mut BB) -> Self::Ref {
-                ($( <$ty>::slice(buf), )*)
-            }
-        }
-
-        impl<'a, $($ty: 'a + $crate::SliceMut<'a>),*> $crate::SliceMut<'a> for ($($ty,)*) {
-            type Mut = ($($ty::Mut,)*);
-
             #[allow(unused_variables)]
-            #[inline]
-            fn slice_mut<BB: $crate::DiceMut<'a>>(buf: &mut BB) -> Self::Mut {
-                ($( <$ty>::slice_mut(buf), )*)
+            fn lense<Buf: DiceRef>(buf: &mut Buf) -> Self::Ref {
+                ($(<$tail>::lense(buf),)*)
             }
         }
-        mk_lense_ty!{() $($ty)*}
+
+        impl<$($tail: LenseMut),*> LenseMut for ($($tail,)*) {
+            type Mut = ($(<$tail as Mode<IsMut>>::Return,)*);
+
+            #[inline]
+            #[allow(unused_variables)]
+            fn lense_mut<Buf: DiceMut>(buf: &mut Buf) -> Self::Mut {
+                ($(<$tail>::lense_mut(buf),)*)
+            }
+        }
+        mk_lense_ty!{ () $($tail)* }
     };
 
-    ([]) => { };
-    ([] ($n:expr) $(($m:expr))*) => {
-        impl<'a, L: 'a + $crate::Lense> $crate::Lense for [L; $n] {
+    ([] $L:ident) => { };
+    ([] $L:ident ($n:expr) $(($m:expr))*) => {
+        impl<L: Lense> Lense for [$L; $n] {
+            type Ref = [<$L as Mode<IsRef>>::Return; $n];
+
             #[inline]
             fn size() -> usize {
                 $n * L::size()
             }
-        }
 
-        impl<'a, L: 'a + $crate::SliceRef<'a>> $crate::SliceRef<'a> for [L; $n] {
-            type Ref = [L::Ref; $n];
-
+            #[inline]
             #[allow(unused_variables)]
-            #[inline]
-            fn slice<B: $crate::Dice<'a>>(buf: &mut B) -> Self::Ref {
-                [$(mk_lense_ty!{ @void ($m) L::slice(buf) }),*]
+            fn lense<Buf: DiceRef>(buf: &mut Buf) -> Self::Ref {
+                [$(mk_lense_ty!{ @void ($m) $L::lense(buf) }),*]
             }
         }
 
-        impl<'a, L: 'a + $crate::SliceMut<'a>> $crate::SliceMut<'a> for [L; $n] {
-            type Mut = [L::Mut; $n];
+        impl<L: LenseMut> LenseMut for [$L; $n] {
+            type Mut = [<$L as Mode<IsMut>>::Return; $n];
 
+            #[inline]
             #[allow(unused_variables)]
-            #[inline]
-            fn slice_mut<B: $crate::DiceMut<'a>>(buf: &mut B) -> Self::Mut {
-                [$(mk_lense_ty!{ @void ($m) L::slice_mut(buf) }),*]
+            fn lense_mut<Buf: DiceMut>(buf: &mut Buf) -> Self::Mut {
+                [$(mk_lense_ty!{ @void ($m) $L::lense_mut(buf) }),*]
             }
         }
-        mk_lense_ty!{[] $(($m))*}
-    };
-
-    ({} @struct public ref $ident:ident $($field:ident: $ty:ty),*) => {
-        pub struct $ident<'a> {
-            $($field: <$ty as $crate::SliceRef<'a>>::Ref),*
-        }
-    };
-    ({} @struct public mut $ident:ident $($field:ident: $ty:ty),*) => {
-        pub struct $ident<'a> {
-            $($field: <$ty as $crate::SliceMut<'a>>::Mut),*
-        }
-    };
-    ({} @struct private ref $ident:ident $($field:ident: $ty:ty),*) => {
-        struct $ident<'a> {
-            $($field: <$ty as $crate::SliceRef<'a>>::Ref),*
-        }
-    };
-    ({} @struct private mut $ident:ident $($field:ident: $ty:ty),*) => {
-        struct $ident<'a> {
-            $($field: <$ty as $crate::SliceMut<'a>>::Mut),*
-        }
-    };
-    ({} @impl $ident:ident size $($field:ident: $ty:ty),*) => {
-        impl<'a> $crate::Lense for $ident<'a> {
-            #[inline]
-            fn size() -> usize {
-                0usize $(+ <$ty as $crate::Lense>::size())*
-            }
-        }
-    };
-    ({} @impl $ident:ident ref $($field:ident: $ty:ty),*) => {
-        impl<'a> $crate::SliceRef<'a> for $ident<'a> {
-            type Ref = $ident<'a>;
-
-            #[inline]
-            fn slice<B: $crate::Dice<'a>>(buf: &mut B) -> Self::Ref {
-                $ident { $($field: <$ty>::slice(buf)),* }
-            }
-        }
-    };
-    ({} @impl $ident:ident mut $($field:ident: $ty:ty),*) => {
-        impl<'a> $crate::SliceMut<'a> for $ident<'a> {
-            type Mut = $ident<'a>;
-
-            #[inline]
-            fn slice_mut<B: $crate::DiceMut<'a>>(buf: &mut B) -> Self::Mut {
-                $ident { $($field: <$ty>::slice_mut(buf)),* }
-            }
-        }
-    };
-    ({} $vis:ident $ident:ident $ref_mut:tt $($tt:tt)*) => {
-        mk_lense_ty!{{} @struct $vis $ref_mut $ident $($tt)*}
-        mk_lense_ty!{{} @impl $ident size $($tt)*}
-        mk_lense_ty!{{} @impl $ident $ref_mut $($tt)*}
+        mk_lense_ty!{ [] $L $(($m))* }
     };
 }
 
 mk_lense_ty!{prim
-    u8  i8
+     u8  i8
     u16 i16
     u32 i32 f32
     u64 i64 f64
@@ -174,82 +117,200 @@ mk_lense_ty!{array
 }
 
 
+/// Create a lense-safe struct containing lense-safe types (Enums are experimental)
 #[macro_export]
-macro_rules! count_tuple {
+macro_rules! mk_lense_struct {
     (@void $void:tt $expr:expr) => { $expr };
-    (@count $($elem:tt)*) => { 0u8 $(+ count_tuple!{@void $elem 1u8})* };
-    (($($tt:expr),*) $void:tt $($tail:tt)*) => {
-        count_tuple!{(count_tuple!{@count $($tail)*} $(, $tt)*) $($tail)*}
-    };
-    ($expr:expr) => { $expr };
-}
+    (@as_item $item:item) => { $item };
 
-// Experimental: needs to either be a DST union or apply padding
-#[cfg(feature = "experimental_lense_enums")]
-#[macro_export]
-macro_rules! mk_lense_enum {
-    (@enum $ident:ident ref $( $variant:ident($($ty:ty),*) ),*) => {
-        enum $ident<'a> {
-            InvalidLense,
-            $( $variant($(<$ty as $crate::SliceRef<'a>>::Ref),*) ),*
+    // User level parsing
+
+    (pub struct $ident:ident: $($tt:tt)*) => {
+        mk_lense_struct!{ @struct public ($ident) () $($tt)* , }
+    };
+    (struct $ident:ident: $($tt:tt)*) => {
+        mk_lense_struct!{ @struct private ($ident) () $($tt)* , }
+    };
+    (pub enum $ident:ident: $($tt:tt)*) => {
+        mk_lense_struct!{ @enum public ($ident) () $($tt)* , }
+    };
+    (enum $ident:ident: $($tt:tt)*) => {
+        mk_lense_struct!{ @enum private ($ident) () $($tt)* , }
+    };
+
+    // Define struct and implementations
+
+    (@struct public ($ident:ident $($builder_struct:tt)*)
+                    ($($field:ident: $ty:ty,)*) $(,)*
+    ) => {
+        mk_lense_struct!{ @as_item
+            pub struct $ident<M> where $($ty: $crate::Mode<M>),* { $($builder_struct)* }
+        }
+        mk_lense_struct!{ {} $ident $($field: $ty),* }
+    };
+    (@struct private ($ident:ident $($builder_struct:tt)*)
+                     ($($field:ident: $ty:ty,)*) $(,)*
+    ) => {
+        mk_lense_struct!{ @as_item
+            struct $ident<M> where $($ty: $crate::Mode<M>),* { $($builder_struct)* }
+        }
+        mk_lense_struct!{ {} $ident $($field: $ty),* }
+    };
+
+    // Struct parsing
+
+    (@struct $vis:tt ($($builder_struct:tt)*) ($($builder_impl:tt)*)
+        #[$attr:meta] $($tt:tt)*
+    ) => {
+        mk_lense_struct!{ @struct $vis
+            ($($builder_struct)* #[$attr])
+            ($($builder_impl)*)
+            $($tt)*
         }
     };
-    (@enum $ident:ident mut $( $variant:ident($($ty:ty),*) ),*) => {
-        enum $ident<'a> {
-            InvalidLense,
-            $( $variant($(<$ty as $crate::SliceRef<'a>>::Mut),*) ),*
+    (@struct $vis:tt ($($builder_struct:tt)*) ($($builder_impl:tt)*)
+        pub $($tt:tt)*
+    ) => {
+        mk_lense_struct!{ @struct $vis
+            ($($builder_struct)* pub)
+            ($($builder_impl)*)
+            $($tt)*
         }
     };
-    (@impl $ident:ident size $($variant:ident($($ty:ty),*) ),*) => {
-        impl<'a> $crate::Lense for $ident<'a> {
+    (@struct $vis:tt ($($builder_struct:tt)*) ($($builder_impl:tt)*)
+        $ident:ident: $ty:ty , $($tt:tt)*
+    ) => {
+        mk_lense_struct!{ @struct $vis
+            ($($builder_struct)* $ident: <$ty as $crate::Mode<M>>::Return,)
+            ($($builder_impl)* $ident: $ty,)
+            $($tt)*
+        }
+    };
+
+    // Lense implementations
+
+    ({} $ident:ident $($field:ident: $ty:ty),* $(,)*) => {
+        impl<M> $crate::Lense for $ident<M>
+            where $($ty: $crate::Mode<M>),*
+        {
+            type Ref = $ident<$crate::IsRef>;
+
+            #[inline]
+            fn size() -> usize {
+                0usize $(+ <$ty>::size())*
+            }
+
+            #[inline]
+            #[allow(unused_variables)]
+            fn lense<Buf: $crate::DiceRef>(buf: &mut Buf) -> Self::Ref {
+                $ident::<$crate::IsRef> { $($field: <$ty>::lense(buf)),* }
+            }
+        }
+
+        impl $crate::LenseMut for $ident<$crate::IsMut> {
+            type Mut = $ident<$crate::IsMut>;
+
+            #[inline]
+            #[allow(unused_variables)]
+            fn lense_mut<Buf: $crate::DiceMut>(buf: &mut Buf) -> Self::Mut {
+                $ident { $($field: <$ty>::lense_mut(buf)),* }
+            }
+        }
+    };
+
+
+    // EXPERIMENTAL ENUM HANDLING!!
+
+
+    (@enum public ($ident:ident $($builder_struct:tt)*)
+                  ($($field:ident($($ty:ty),*))*) $(,)*
+    ) => {
+        mk_lense_struct!{ @as_item
+            pub enum $ident<M> where $($($ty: $crate::Mode<M>),*),* { InvalidLense, $($builder_struct)* }
+        }
+        mk_lense_struct!{ E $ident $($field($($ty),*))* }
+    };
+    (@enum private ($ident:ident $($builder_struct:tt)*)
+                   ($($field:ident($($ty:ty),*))*) $(,)*
+    ) => {
+        mk_lense_struct!{ @as_item
+            enum $ident<M> where $($($ty: $crate::Mode<M>),*),* { InvalidLense, $($builder_struct)* }
+        }
+        mk_lense_struct!{ E $ident $($field($($ty),*))* }
+    };
+
+    // Struct parsing
+
+    (@enum $vis:tt ($($builder_struct:tt)*) ($($builder_impl:tt)*)
+        #[$attr:meta] $($tt:tt)*
+    ) => {
+        mk_lense_struct!{ @enum $vis
+            ($($builder_struct)* #[$attr])
+            ($($builder_impl)*)
+            $($tt)*
+        }
+    };
+    (@enum $vis:tt ($($builder_struct:tt)*) ($($builder_impl:tt)*)
+        $ident:ident($ty:ty) , $($tt:tt)*
+    ) => {
+        mk_lense_struct!{ @enum $vis
+            ($($builder_struct)* $ident(<$ty as $crate::Mode<M>>::Return),)
+            ($($builder_impl)* $ident($ty))
+            $($tt)*
+        }
+    };
+
+    // Lense implementations
+    (@count_cont $($elem:tt)*) => { 0u8 $(+ mk_lense_struct!{@void $elem 1u8})* };
+    (@count ($($tt:expr),*) $void:tt $($tail:tt)*) => {
+        mk_lense_struct!{@count (mk_lense_struct!{@count_cont $($tail)*} $(, $tt)*) $($tail)*}
+    };
+    (@count $expr:expr) => { $expr };
+
+    (E $ident:ident $($variant:ident($($ty:ty),*))*) => {
+        impl<M> $crate::Lense for $ident<M>
+            where $($($ty: $crate::Mode<M>),*),*
+        {
+            type Ref = $ident<$crate::IsRef>;
+
             #[inline]
             fn size() -> usize {
                 *[$( <($($ty),*) as $crate::Lense>::size() ),*].iter().max().unwrap()
             }
-        }
-    };
-    (@impl $ident:ident ref $($variant:ident($($ty:ty),*) ),*) => {
-        impl<'a> $crate::SliceRef<'a> for $ident<'a> {
-            type Ref = $ident<'a>;
 
-            #[allow(non_snake_case)]
             #[inline]
-            fn slice<B: $crate::Dice<'a>>(buf: &mut B) -> Self::Ref {
-                let tag = <u8>::slice(buf);
-                let ($($variant,)*) = count_tuple!(() $( $variant )*);
-                match tag {
-                    $(x if *x == $variant => $ident::$variant(<$($ty),*>::slice(buf)),)*
-                    _ => $ident::InvalidLense,
-                }
+            #[allow(unused_variables)]
+            fn lense<Buf: $crate::DiceRef>(buf: &mut Buf) -> Self::Ref {
+                let tag = <u8>::lense(buf);
+                let ($($variant,)*) = mk_lense_struct!(@count () $( $variant )*);
+                let (ret, offset) = match tag {
+                    $(x if *x == $variant =>
+                        ($ident::$variant::<$crate::IsRef>(<($($ty),*)>::lense(buf)),
+                         <($($ty),*)>::size() - Self::size()),)*
+                    _ => ($ident::InvalidLense::<$crate::IsRef>, Self::size()),
+                };
+                debug_assert!(offset == 0, "Enum padding is not yet supported");
+                ret
             }
         }
-    };
-    (@impl $ident:ident mut $($variant:ident($($ty:ty),*) ),*) => {
-        impl<'a> $crate::SliceMut<'a> for $ident<'a> {
-            type Mut = $ident<'a>;
 
-            #[allow(non_snake_case)]
+        impl $crate::LenseMut for $ident<$crate::IsMut> {
+            type Mut = $ident<$crate::IsMut>;
+
             #[inline]
-            fn slice_mut<B: $crate::DiceMut<'a>>(buf: &mut B) -> Self::Mut {
-                let tag = <u8>::slice(buf);
-                let ($($variant,)*) = count_tuple!(() $( $variant )*);
-                match tag {
-                    $(x if *x == $variant => $ident::$variant(<$($ty),*>::slice_mut(buf)),)*
-                    _ => $ident::InvalidLense,
-                }
+            #[allow(unused_variables)]
+            fn lense_mut<Buf: $crate::DiceMut>(buf: &mut Buf) -> Self::Mut {
+                let tag = <u8>::lense(buf);
+                let ($($variant,)*) = mk_lense_struct!(@count () $( $variant )*);
+                let (ret, offset) = match tag {
+                    $(x if *x == $variant =>
+                        ($ident::$variant(<($($ty),*)>::lense_mut(buf)),
+                         <($($ty),*)>::size() - Self::size()),)*
+                    _ => ($ident::InvalidLense, Self::size()),
+                };
+                debug_assert!(offset == 0, "Enum padding is not yet supported");
+                ret
             }
         }
-    };
-    (enum $ident:ident $ref_mut:tt $( $variant:ident($($ty:ty),*) ),*) => {
-        mk_lense_enum!{ @enum $ident $ref_mut $( $variant($($ty),*) ),* }
-        mk_lense_enum!{ @impl $ident size $( $variant($($ty),*) ),* }
-        mk_lense_enum!{ @impl $ident $ref_mut $( $variant($($ty),*) ),* }
-    };
-}
-
-#[cfg(all(test, feature = "experimental_lense_enums"))]
-mk_lense_enum!{enum Foo ref
-    U8(u8),
-    U16(u16),
-    U32(u32)
+    }
 }

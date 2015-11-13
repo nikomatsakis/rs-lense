@@ -1,8 +1,10 @@
 use std::cell::Cell;
 
-use {Lense, SliceRef, SliceMut, Dice};
+use {Lense, LenseMut, Mode, IsRef, IsMut};
 use aligned::Aligned;
 
+/// A 8-byte aligned random access backing collection supporting locking on borrows to prevent
+/// aliasing.
 pub struct SeekablePool<L: Lense> {
     // Backing u64 pool
     pool: Vec<u64>,
@@ -20,7 +22,8 @@ fn div_up(n: usize, m: usize) -> usize {
     }
 }
 
-impl<'a, L: Lense> SeekablePool<L> {
+impl<L: Lense> SeekablePool<L> {
+    /// Prepare a collection to store `cap` of type L
     pub fn with_capacity(cap: usize) -> Self {
         SeekablePool {
             pool: vec![0u64; div_up(cap * L::size(), 8)],
@@ -29,7 +32,7 @@ impl<'a, L: Lense> SeekablePool<L> {
         }
     }
 
-    fn lense(&self, pos: usize) -> Option<Guard<L::Ref>> where L: SliceRef<'a> {
+    fn lense(&self, pos: usize) -> Option<Guard<<L as Mode<IsRef>>::Return>> {
         match self.state.get(pos) {
             Some(ref mut lock) if !lock.get() => {
                 let ref mut ptr = Aligned::new(unsafe { // &self[L::size() * pos .. L::size()]
@@ -40,14 +43,14 @@ impl<'a, L: Lense> SeekablePool<L> {
 
                 lock.set(true);
 
-                Some(Guard(&lock, L::slice(ptr)))
+                Some(Guard { lock: &lock, value: L::lense(ptr) })
             }
             Some(..) => None,
             None => panic!("Invalid index! {}", pos),
         }
     }
 
-    fn lense_mut(&self, pos: usize) -> Option<Guard<L::Mut>> where L: SliceMut<'a> {
+    fn lense_mut(&self, pos: usize) -> Option<Guard<<L as Mode<IsMut>>::Return>> where L: LenseMut {
         match self.state.get(pos) {
             Some(ref mut lock) if !lock.get() => {
                 let ref mut ptr = Aligned::new(unsafe { // &mut self[L::size() * pos .. L::size()]
@@ -58,18 +61,20 @@ impl<'a, L: Lense> SeekablePool<L> {
 
                 lock.set(true);
 
-                Some(Guard(&lock, L::slice_mut(ptr)))
+                Some(Guard { lock: &lock, value: L::lense_mut(ptr) })
             }
             Some(..) => None,
             None => panic!("Invalid index! {}", pos),
         }
     }
 
-    pub fn iter(&'a self) -> IterRef<L> where L: SliceRef<'a> {
+    /// Iterate immutably over the pool's collection of lenses.
+    pub fn iter(&self) -> IterRef<L> {
         IterRef { pool: self, cur: 0 }
     }
 
-    pub fn iter_mut(&'a mut self) -> IterMut<'a, L> where L: SliceMut<'a> {
+    /// Iterate mutably over the pool's collection of lenses.
+    pub fn iter_mut(&mut self) -> IterMut<L> where L: LenseMut {
         IterMut { pool: self, cur: 0 }
     }
 }
@@ -96,11 +101,14 @@ impl<L: Lense> ::std::ops::DerefMut for SeekablePool<L> {
 
 // Guard the lense until it is dropped and then release the lock on the pool position
 
-pub struct Guard<'a, T>(&'a Cell<bool>, T);
+pub struct Guard<'a, T> {
+    lock: &'a Cell<bool>,
+    value: T
+}
 
 impl<'a, T> Drop for Guard<'a, T> {
     fn drop(&mut self) {
-        self.0.set(false);
+        self.lock.set(false);
     }
 }
 
@@ -108,25 +116,26 @@ impl<'a, T> ::std::ops::Deref for Guard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.1
+        &self.value
     }
 }
 
 impl<'a, T> ::std::ops::DerefMut for Guard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.1
+        &mut self.value
     }
 }
 
 // Should iterators be reserved for lense_vector?
 
-pub struct IterRef<'a, L: 'a + SliceRef<'a>> {
+/// Iterate immutably over the pool's collection of lenses.
+pub struct IterRef<'a, L: 'a + Lense> {
     pool: &'a SeekablePool<L>,
     cur: usize,
 }
 
-impl<'a, L: SliceRef<'a>> Iterator for IterRef<'a, L> {
-    type Item = Guard<'a, L::Ref>;
+impl<'a, L: Lense> Iterator for IterRef<'a, L> {
+    type Item = Guard<'a, <L as Mode<IsRef>>::Return>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.cur < self.pool.state.len() {
@@ -137,19 +146,20 @@ impl<'a, L: SliceRef<'a>> Iterator for IterRef<'a, L> {
     }
 }
 
-impl<'a, L: SliceRef<'a>> ExactSizeIterator for IterRef<'a, L> {
+impl<'a, L: Lense> ExactSizeIterator for IterRef<'a, L> {
     fn len(&self) -> usize {
         self.pool.state.capacity()
     }
 }
 
-pub struct IterMut<'a, L: 'a + SliceMut<'a>> {
+/// Iterate mutably over the pool's collection of lenses.
+pub struct IterMut<'a, L: 'a + LenseMut> {
     pool: &'a SeekablePool<L>,
     cur: usize,
 }
 
-impl<'a, L: SliceMut<'a>> Iterator for IterMut<'a, L> {
-    type Item = Guard<'a, L::Mut>;
+impl<'a, L: LenseMut> Iterator for IterMut<'a, L> {
+    type Item = Guard<'a, <L as Mode<IsMut>>::Return>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.cur < self.pool.state.len() {
@@ -160,7 +170,7 @@ impl<'a, L: SliceMut<'a>> Iterator for IterMut<'a, L> {
     }
 }
 
-impl<'a, L: SliceMut<'a>> ExactSizeIterator for IterMut<'a, L> {
+impl<'a, L: LenseMut> ExactSizeIterator for IterMut<'a, L> {
     fn len(&self) -> usize {
         self.pool.state.capacity()
     }

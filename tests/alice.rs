@@ -1,8 +1,8 @@
 #[macro_use] extern crate lense;
 
-use lense::{Lense, SeekablePool};
+use lense::{Lense, SeekablePool, IsRef};
 
-mk_lense_ty!{pub struct AliceRef ref
+mk_lense_struct!{pub struct Alice:
     a:  u8,        // 1
     bc: (u8, u16), // 3
     d:  u32,       // 4
@@ -26,9 +26,9 @@ fn tuple_alice_iter() {
 
 #[test]
 fn alice_iter() {
-    let pool = SeekablePool::<AliceRef>::with_capacity(4);
+    let pool = SeekablePool::<Alice<IsRef>>::with_capacity(4);
     for guard in pool.iter() {
-        let AliceRef { a, bc: (b, c), d, e } = *guard;
+        let Alice { a, bc: (b, c), d, e } = *guard;
         assert_eq!(*a, 0u8);
         assert_eq!(*b, 0u8);
         assert_eq!(*c, 0u16);
@@ -39,5 +39,5 @@ fn alice_iter() {
 
 #[test]
 fn size_alice_16() {
-    assert_eq!(AliceRef::size(), 16);
+    assert_eq!(Alice::<::lense::IsRef>::size(), 16);
 }

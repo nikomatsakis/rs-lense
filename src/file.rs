@@ -15,6 +15,7 @@ enum CacheEntry {
     Unlocked(usize), // An entry exists and is not in use
 }
 
+/// A cached file access lense. Suitable for databases.
 pub struct LenseFile<L: Lense> {
     file: Option<File>,
     pool: SeekablePool<L>,
@@ -23,6 +24,7 @@ pub struct LenseFile<L: Lense> {
 }
 
 impl<L> LenseFile<L> where L: Lense {
+    /// Allocate the pool and cache such that we can store a `cap` of type L.
     pub fn with_capacity(cap: usize) -> Self {
         LenseFile {
             file: None,
@@ -32,6 +34,7 @@ impl<L> LenseFile<L> where L: Lense {
         }
     }
 
+    /// Read a file directly into the pool.
     pub fn read_file(&mut self, file: &mut File) -> io::Result<usize> {
         match self.policy {
             PoolPolicy::Strict => file.read(&mut *self),
