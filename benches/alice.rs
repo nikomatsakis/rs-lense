@@ -48,15 +48,13 @@ bench!{
         }
     }
 
-    // Hacky... o.o
     fn tuple_alice_x3_iter_mut(mut pool) for (TupleAlice) * 3 {
-        for guard in pool.iter_mut() {
-            let (ref mut a, (ref mut b, ref mut c), ref mut d, ref mut e) = *black_box(guard);
-            **a = 1;
-            **b = 1;
-            **c = 1;
-            **d = 1;
-            **e = 1;
+        for mut guard in pool.iter_mut() {
+            *guard.0 = 1;
+            *guard.1 .0 = 2;
+            *guard.1 .1 = 3;
+            *guard.2 = 4;
+            *guard.3 = 5;
         }
     }
 
@@ -66,15 +64,13 @@ bench!{
         }
     }
 
-    // Hacky... o.o
     fn struct_alice_x3_iter_mut(mut pool) for (Alice<IsMut>) * 3 {
-        for guard in pool.iter_mut() {
-            let Alice { ref mut a, bc: (ref mut b, ref mut c), ref mut d, ref mut e } = *black_box(guard);
-            **a = 1;
-            **b = 1;
-            **c = 1;
-            **d = 1;
-            **e = 1;
+        for mut guard in pool.iter_mut() {
+            *guard.a = 1;
+            *guard.bc.0 = 2;
+            *guard.bc.1 = 3;
+            *guard.d = 4;
+            *guard.e = 5;
         }
     }
 

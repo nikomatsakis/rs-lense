@@ -4,7 +4,7 @@ macro_rules! mk_lense_ty {
     (@void $void:tt $expr:expr) => { $expr };
 
     (tuple $($ty:ident)*) => { mk_lense_ty!{ () void $($ty)* } };
-    (array $($tt:tt)*) => { mk_lense_ty!{ [] L $(($tt))* } };
+    (array $($tt:tt)*) => { mk_lense_ty!{ [] $(($tt))* } };
     (prim $($ty:ty)*) => {$(
         impl<'a> RefMut<'a> for $ty {
             type Ref = &'a $ty;
@@ -66,10 +66,10 @@ macro_rules! mk_lense_ty {
         mk_lense_ty!{ () $($tail)* }
     };
 
-    ([] $L:ident) => { };
-    ([] $L:ident ($n:expr) $(($m:expr))*) => {
-        impl<L: Lense> Lense for [$L; $n] {
-            type Ref = [<$L as Mode<IsRef>>::Return; $n];
+    ([]) => { };
+    ([] ($n:expr) $(($m:expr))*) => {
+        impl<L: Lense> Lense for [L; $n] {
+            type Ref = [<L as Mode<IsRef>>::Return; $n];
 
             #[inline]
             fn size() -> usize {
@@ -79,20 +79,20 @@ macro_rules! mk_lense_ty {
             #[inline]
             #[allow(unused_variables)]
             fn lense<Buf: DiceRef>(buf: &mut Buf) -> Self::Ref {
-                [$(mk_lense_ty!{ @void ($m) $L::lense(buf) }),*]
+                [$(mk_lense_ty!{ @void ($m) L::lense(buf) }),*]
             }
         }
 
-        impl<L: LenseMut> LenseMut for [$L; $n] {
-            type Mut = [<$L as Mode<IsMut>>::Return; $n];
+        impl<L: LenseMut> LenseMut for [L; $n] {
+            type Mut = [<L as Mode<IsMut>>::Return; $n];
 
             #[inline]
             #[allow(unused_variables)]
             fn lense_mut<Buf: DiceMut>(buf: &mut Buf) -> Self::Mut {
-                [$(mk_lense_ty!{ @void ($m) $L::lense_mut(buf) }),*]
+                [$(mk_lense_ty!{ @void ($m) L::lense_mut(buf) }),*]
             }
         }
-        mk_lense_ty!{ [] $L $(($m))* }
+        mk_lense_ty!{ [] $(($m))* }
     };
 }
 
@@ -120,44 +120,38 @@ mk_lense_ty!{array
 /// Create a lense-safe struct containing lense-safe types (Enums are experimental)
 #[macro_export]
 macro_rules! mk_lense_struct {
-    (@void $void:tt $expr:expr) => { $expr };
     (@as_item $item:item) => { $item };
 
-    // User level parsing
+    // Type independant item parsing
 
-    (pub struct $ident:ident: $($tt:tt)*) => {
-        mk_lense_struct!{ @struct public ($ident) () $($tt)* , }
+    ([$($meta:tt)*] #[$attr:meta] $($tt:tt)*) => {
+        mk_lense_struct!{ [$($meta)* $attr] $($tt)* }
     };
-    (struct $ident:ident: $($tt:tt)*) => {
-        mk_lense_struct!{ @struct private ($ident) () $($tt)* , }
+    ([$($meta:tt)*] pub $ty:tt $ident:ident: $($tt:tt)*) => {
+        mk_lense_struct!{ @$ty public ([$($meta)*] $ident) () $($tt)* }
     };
-    (pub enum $ident:ident: $($tt:tt)*) => {
-        mk_lense_struct!{ @enum public ($ident) () $($tt)* , }
-    };
-    (enum $ident:ident: $($tt:tt)*) => {
-        mk_lense_struct!{ @enum private ($ident) () $($tt)* , }
-    };
-
-    // Define struct and implementations
-
-    (@struct public ($ident:ident $($builder_struct:tt)*)
-                    ($($field:ident: $ty:ty,)*) $(,)*
-    ) => {
-        mk_lense_struct!{ @as_item
-            pub struct $ident<M> where $($ty: $crate::Mode<M>),* { $($builder_struct)* }
-        }
-        mk_lense_struct!{ {} $ident $($field: $ty),* }
-    };
-    (@struct private ($ident:ident $($builder_struct:tt)*)
-                     ($($field:ident: $ty:ty,)*) $(,)*
-    ) => {
-        mk_lense_struct!{ @as_item
-            struct $ident<M> where $($ty: $crate::Mode<M>),* { $($builder_struct)* }
-        }
-        mk_lense_struct!{ {} $ident $($field: $ty),* }
+    ([$($meta:tt)*] $ty:tt $ident:ident: $($tt:tt)*) => {
+        mk_lense_struct!{ @$ty private ([$($meta)*] $ident) () $($tt)* }
     };
 
     // Struct parsing
+
+    (@struct public ([$($meta:tt)*] $ident:ident $($builder_struct:tt)*)
+                    ($($field:ident: $ty:ty,)*) $(,)*
+    ) => {
+        mk_lense_struct!{ @as_item
+            $(#[$meta])* pub struct $ident<M> where $($ty: $crate::Mode<M>),* { $($builder_struct)* }
+        }
+        mk_lense_struct!{ {} $ident $($field: $ty),* }
+    };
+    (@struct private ([$($meta:tt)*] $ident:ident $($builder_struct:tt)*)
+                     ($($field:ident: $ty:ty,)*) $(,)*
+    ) => {
+        mk_lense_struct!{ @as_item
+            $(#[$meta])* struct $ident<M> where $($ty: $crate::Mode<M>),* { $($builder_struct)* }
+        }
+        mk_lense_struct!{ {} $ident $($field: $ty),* }
+    };
 
     (@struct $vis:tt ($($builder_struct:tt)*) ($($builder_impl:tt)*)
         #[$attr:meta] $($tt:tt)*
@@ -187,7 +181,51 @@ macro_rules! mk_lense_struct {
         }
     };
 
-    // Lense implementations
+    // Enum parsing
+
+    (@enum public ([$($meta:tt)*] $ident:ident $($builder_struct:tt)*)
+                  ($($field:ident($($ty:ty),*))*) $(,)*
+    ) => {
+        mk_lense_struct!{ @as_item
+            $(#[$meta])* pub enum $ident<M> where $($($ty: $crate::Mode<M>),*),* {
+                InvalidLense,
+                $($builder_struct)*
+            }
+        }
+        mk_lense_struct!{ E $ident $($field($($ty),*))* }
+    };
+    (@enum private ([$($meta:tt)*] $ident:ident $($builder_struct:tt)*)
+                   ($($field:ident($($ty:ty),*))*) $(,)*
+    ) => {
+        mk_lense_struct!{ @as_item
+            enum $ident<M> where $($($ty: $crate::Mode<M>),*),* {
+                InvalidLense,
+                $($builder_struct)*
+            }
+        }
+        mk_lense_struct!{ E $ident $($field($($ty),*))* }
+    };
+
+    (@enum $vis:tt ($($builder_struct:tt)*) ($($builder_impl:tt)*)
+        #[$attr:meta] $($tt:tt)*
+    ) => {
+        mk_lense_struct!{ @enum $vis
+            ($($builder_struct)* #[$attr])
+            ($($builder_impl)*)
+            $($tt)*
+        }
+    };
+    (@enum $vis:tt ($($builder_struct:tt)*) ($($builder_impl:tt)*)
+        $ident:ident($ty:ty) , $($tt:tt)*
+    ) => {
+        mk_lense_struct!{ @enum $vis
+            ($($builder_struct)* $ident(<$ty as $crate::Mode<M>>::Return),)
+            ($($builder_impl)* $ident($ty))
+            $($tt)*
+        }
+    };
+
+    // Lense struct implementations
 
     ({} $ident:ident $($field:ident: $ty:ty),* $(,)*) => {
         impl<M> $crate::Lense for $ident<M>
@@ -218,54 +256,16 @@ macro_rules! mk_lense_struct {
         }
     };
 
+    // Enum variant counter
 
-    // EXPERIMENTAL ENUM HANDLING!!
-
-
-    (@enum public ($ident:ident $($builder_struct:tt)*)
-                  ($($field:ident($($ty:ty),*))*) $(,)*
-    ) => {
-        mk_lense_struct!{ @as_item
-            pub enum $ident<M> where $($($ty: $crate::Mode<M>),*),* { InvalidLense, $($builder_struct)* }
-        }
-        mk_lense_struct!{ E $ident $($field($($ty),*))* }
-    };
-    (@enum private ($ident:ident $($builder_struct:tt)*)
-                   ($($field:ident($($ty:ty),*))*) $(,)*
-    ) => {
-        mk_lense_struct!{ @as_item
-            enum $ident<M> where $($($ty: $crate::Mode<M>),*),* { InvalidLense, $($builder_struct)* }
-        }
-        mk_lense_struct!{ E $ident $($field($($ty),*))* }
-    };
-
-    // Struct parsing
-
-    (@enum $vis:tt ($($builder_struct:tt)*) ($($builder_impl:tt)*)
-        #[$attr:meta] $($tt:tt)*
-    ) => {
-        mk_lense_struct!{ @enum $vis
-            ($($builder_struct)* #[$attr])
-            ($($builder_impl)*)
-            $($tt)*
-        }
-    };
-    (@enum $vis:tt ($($builder_struct:tt)*) ($($builder_impl:tt)*)
-        $ident:ident($ty:ty) , $($tt:tt)*
-    ) => {
-        mk_lense_struct!{ @enum $vis
-            ($($builder_struct)* $ident(<$ty as $crate::Mode<M>>::Return),)
-            ($($builder_impl)* $ident($ty))
-            $($tt)*
-        }
-    };
-
-    // Lense implementations
+    (@void $void:tt $expr:expr) => { $expr };
     (@count_cont $($elem:tt)*) => { 0u8 $(+ mk_lense_struct!{@void $elem 1u8})* };
     (@count ($($tt:expr),*) $void:tt $($tail:tt)*) => {
         mk_lense_struct!{@count (mk_lense_struct!{@count_cont $($tail)*} $(, $tt)*) $($tail)*}
     };
     (@count $expr:expr) => { $expr };
+
+    // Lense enum implementations
 
     (E $ident:ident $($variant:ident($($ty:ty),*))*) => {
         impl<M> $crate::Lense for $ident<M>
@@ -279,18 +279,15 @@ macro_rules! mk_lense_struct {
             }
 
             #[inline]
-            #[allow(unused_variables)]
+            #[allow(non_snake_case)]
             fn lense<Buf: $crate::DiceRef>(buf: &mut Buf) -> Self::Ref {
                 let tag = <u8>::lense(buf);
                 let ($($variant,)*) = mk_lense_struct!(@count () $( $variant )*);
-                let (ret, offset) = match tag {
+                match tag {
                     $(x if *x == $variant =>
-                        ($ident::$variant::<$crate::IsRef>(<($($ty),*)>::lense(buf)),
-                         <($($ty),*)>::size() - Self::size()),)*
-                    _ => ($ident::InvalidLense::<$crate::IsRef>, Self::size()),
-                };
-                debug_assert!(offset == 0, "Enum padding is not yet supported");
-                ret
+                        $ident::$variant::<$crate::IsRef>(<($($ty),*)>::lense(buf)), )*
+                    _ => $ident::InvalidLense::<$crate::IsRef>,
+                }
             }
         }
 
@@ -298,19 +295,20 @@ macro_rules! mk_lense_struct {
             type Mut = $ident<$crate::IsMut>;
 
             #[inline]
-            #[allow(unused_variables)]
+            #[allow(non_snake_case)]
             fn lense_mut<Buf: $crate::DiceMut>(buf: &mut Buf) -> Self::Mut {
                 let tag = <u8>::lense(buf);
                 let ($($variant,)*) = mk_lense_struct!(@count () $( $variant )*);
-                let (ret, offset) = match tag {
+                match tag {
                     $(x if *x == $variant =>
-                        ($ident::$variant(<($($ty),*)>::lense_mut(buf)),
-                         <($($ty),*)>::size() - Self::size()),)*
-                    _ => ($ident::InvalidLense, Self::size()),
-                };
-                debug_assert!(offset == 0, "Enum padding is not yet supported");
-                ret
+                        $ident::$variant(<($($ty),*)>::lense_mut(buf)), )*
+                    _ => $ident::InvalidLense,
+                }
             }
         }
-    }
+    };
+
+    // Start parsing
+
+    ($($tt:tt)*) => { mk_lense_struct!{ [] $($tt)* } };
 }
