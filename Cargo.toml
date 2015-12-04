@@ -1,0 +1,16 @@
+[package]
+name = "tiny-lense"
+version = "0.1.0"
+authors = ["James McGlashan <github@darkfox.id.au>"]
+
+[features]
+no_automatic_padding = []
+
+[profile.bench]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+
+[dependencies]
