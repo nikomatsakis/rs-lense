@@ -1,14 +1,27 @@
 use std::{marker, ops};
 
-use {Lense, Cursor, Result, SizedLense};
+use {Lense, Cursor, Result, SizedLense, DstExt};
 
 /// Vector for sized lenses
-unsafe impl<'a, T: Lense<'a, S> + SizedLense, S> Lense<'a, S> for Vec<T> where S: ops::Deref<Target=[u8]> {
+unsafe impl<'a, T: Lense<'a, S> + SizedLense, S> Lense<'a, S> for Vec<T>
+    where S: ops::Deref<Target=[u8]>
+{
     type Ret = Iter<T, S>;
 
     fn lense(c: &mut Cursor<S>) -> Result<Self::Ret> {
         let l = *try!(<u16>::lense(c)) as usize * T::size();
         c.advance(l as u64).map(Iter::new)
+    }
+}
+
+impl<'a, T: Lense<'a, S> + SizedLense, S> DstExt<'a, S, T> for Vec<T>
+    where S: ops::Deref<Target=[u8]> + ops::DerefMut
+{
+    type Ret = Iter<T, S>;
+
+    fn with_length(c: &mut Cursor<S>, l: u16) -> Result<Self::Ret> {
+        *try!(<u16>::lense(c)) = l;
+        c.advance((l as usize * T::size()) as u64).map(Iter::new)
     }
 }
 

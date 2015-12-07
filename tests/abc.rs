@@ -5,7 +5,7 @@ use std::ops::Deref;
 use lense::{Aligned, Cursor, Lense, Result, Error, SizedLense};
 
 struct Alice<'a, S>
-    where S: Deref<Target=[u8]>, [u32]: Lense<'a, S>
+    where S: Deref<Target=[u8]>
 {
     a: <u8 as Lense<'a, S>>::Ret,
     b: <(u8, u16) as Lense<'a, S>>::Ret,
@@ -21,14 +21,14 @@ enum Bob<'a, S>
 }
 
 enum Carol<'a, S>
-    where S: Deref<Target=[u8]>, [u32]: Lense<'a, S>
+    where S: Deref<Target=[u8]>
 {
-    Alice(Alice<'a, S>),
-    Bob(Bob<'a, S>),
+    Alice(<Alice<'a, S> as Lense<'a, S>>::Ret),
+    Bob(<Bob<'a, S> as Lense<'a, S>>::Ret),
 }
 
 unsafe impl<'a, S> Lense<'a, S> for Alice<'a, S>
-    where S: Deref<Target=[u8]>, [u32]: Lense<'a, S>
+    where S: Deref<Target=[u8]>
 {
     type Ret = Self;
 
@@ -69,7 +69,7 @@ unsafe impl<'a, S> Lense<'a, S> for Bob<'a, S>
 
 
 unsafe impl<'a, S> Lense<'a, S> for Carol<'a, S>
-    where S: Deref<Target=[u8]>, [u32]: Lense<'a, S>
+    where S: Deref<Target=[u8]>
 {
     type Ret = Self;
 
@@ -92,7 +92,7 @@ fn union_alice() {
             assert_eq!(*a, 0);
             assert_eq!(*b1, 0u8);
             assert_eq!(*b2, 0u16);
-            assert_eq!(c, &[]);
+            assert_eq!(&*c, &[]);
             assert_eq!(d.count(), 0);
         },
         _ => unreachable!()

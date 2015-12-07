@@ -39,6 +39,7 @@ mod prim;
 mod lense;
 mod vec;
 mod slice;
+mod ext;
 
 #[macro_use]
 mod dsl;
@@ -47,6 +48,7 @@ pub use aligned::Aligned;
 pub use cur::{Cursor, RefMut};
 pub use lense::Lense;
 pub use prim::{Primitive, SizedLense};
+pub use ext::DstExt;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
@@ -57,6 +59,3 @@ pub enum Error {
     /// Enum or union tag is invalid
     InvalidTag(u8),
 }
-
-pub enum Ref {}
-pub enum Mut {}
