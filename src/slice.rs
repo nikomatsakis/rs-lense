@@ -1,32 +1,25 @@
-use std::{ops, slice, io};
-use std::io::Seek;
+use std::slice;
 
-use {Lense, Cursor, Result, Error, Primitive};
+use {Lense, Cursor, Result, Primitive, SizedLense};
 
-// Slices only work for primitives, LenseVec for anything else
-unsafe impl<'a, L: 'a + Primitive> Lense<'a> for [L] {
-    type Ref = &'a Self;
-    type Mut = &'a mut Self;
+unsafe impl<'a, L: 'a + SizedLense + Primitive> Lense<'a, &'a [u8]> for [L] {
+    type Ret = &'a [L];
 
-    fn lense<S>(c: &mut Cursor<S>) -> Result<Self::Ref>
-        where S: ops::Deref<Target=[u8]>
-    {
+    fn lense(c: &mut Cursor<&[u8]>) -> Result<Self::Ret> {
         let l = *try!(<u16>::lense(c)) as usize;
-        let p = c.as_ptr();
-        match c.seek(io::SeekFrom::Current(l as i64)) {
-            Ok(_) => Ok(unsafe { slice::from_raw_parts(p as *const L, l) }),
-            Err(_) => Err(Error::OutOfBounds(l)),
-        }
+        try!(c.align::<L>());
+        c.advance((l * L::size()) as u64)
+         .map(|c| unsafe { slice::from_raw_parts(c.as_ptr() as *const _, l) })
     }
+}
 
-    fn lense_mut<S>(c: &mut Cursor<S>) -> Result<Self::Mut>
-        where S: ops::Deref<Target=[u8]> + ops::DerefMut
-    {
+unsafe impl<'a, L: 'a + SizedLense + Primitive> Lense<'a, &'a mut [u8]> for [L] {
+    type Ret = &'a mut [L];
+
+    fn lense(c: &mut Cursor<&mut [u8]>) -> Result<Self::Ret> {
         let l = *try!(<u16>::lense(c)) as usize;
-        let p = c.as_mut_ptr();
-        match c.seek(io::SeekFrom::Current(l as i64)) {
-            Ok(_) => Ok(unsafe { slice::from_raw_parts_mut(p as *mut L, l) }),
-            Err(_) => Err(Error::OutOfBounds(l)),
-        }
+        try!(c.align::<L>());
+        c.advance((l * L::size()) as u64)
+         .map(|mut c| unsafe { slice::from_raw_parts_mut(c.as_mut_ptr() as *mut _, l) })
     }
 }

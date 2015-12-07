@@ -1,11 +1,11 @@
 #![feature(test)]
 
 #[macro_use]
-extern crate tiny_lense;
+extern crate lense;
 extern crate test;
 
 use test::{Bencher, black_box};
-use tiny_lense::{Lense, Cursor, Aligned};
+use lense::{Lense, Cursor, Aligned};
 
 type U64x32x32 = [[u64; 32]; 32];
 

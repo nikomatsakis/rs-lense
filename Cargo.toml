@@ -1,5 +1,5 @@
 [package]
-name = "tiny-lense"
+name = "lense"
 version = "0.1.0"
 authors = ["James McGlashan <github@darkfox.id.au>"]
 

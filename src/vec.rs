@@ -1,78 +1,36 @@
-use std::{io, marker, ops, slice};
-use std::io::Seek;
+use std::{marker, ops};
 
-use {Lense, Cursor, Result, Error, SizedLense};
+use {Lense, Cursor, Result, SizedLense};
 
 /// Vector for sized lenses
-unsafe impl<'a, T: Lense<'a> + SizedLense> Lense<'a> for Vec<T> {
-    type Ref = Iter<'a, T>;
-    type Mut = IterMut<'a, T>;
+unsafe impl<'a, T: Lense<'a, S> + SizedLense, S> Lense<'a, S> for Vec<T> where S: ops::Deref<Target=[u8]> {
+    type Ret = Iter<T, S>;
 
-    fn lense<S>(c: &mut Cursor<S>) -> Result<Self::Ref>
-        where S: ops::Deref<Target=[u8]>
-    {
-        let l = *try!(<u16>::lense(c)) as usize * T::size() ;
-        let p = c.as_ptr();
-        match c.seek(io::SeekFrom::Current(l as i64)) {
-            Ok(_) => Ok(unsafe { Iter::new(slice::from_raw_parts(p as *const u8, l)) }),
-            Err(_) => Err(Error::OutOfBounds(l)),
-        }
-    }
-
-    fn lense_mut<S>(c: &mut Cursor<S>) -> Result<Self::Mut>
-        where S: ops::Deref<Target=[u8]> + ops::DerefMut
-    {
-        let l = *try!(<u16>::lense(c)) as usize * T::size() ;
-        let p = c.as_ptr();
-        match c.seek(io::SeekFrom::Current(l as i64)) {
-            Ok(_) => Ok(unsafe { IterMut::new(slice::from_raw_parts_mut(p as *mut u8, l)) }),
-            Err(_) => Err(Error::OutOfBounds(l)),
-        }
+    fn lense(c: &mut Cursor<S>) -> Result<Self::Ret> {
+        let l = *try!(<u16>::lense(c)) as usize * T::size();
+        c.advance(l as u64).map(Iter::new)
     }
 }
 
 /// Immutable iterator
-struct Iter<'a, T: SizedLense> {
-    cursor: Cursor<&'a [u8]>,
-    marker: marker::PhantomData<T>,
+struct Iter<T: SizedLense, S> {
+    cursor: Cursor<S>,
+    marker: marker::PhantomData<*mut T>,
 }
 
-impl<'a, T: SizedLense> Iter<'a, T> {
-    fn new(c: &'a [u8]) -> Self {
+impl<T: SizedLense, S> Iter<T, S> {
+    fn new(c: Cursor<S>) -> Self {
         Iter {
-            cursor: Cursor::new(c),
+            cursor: c,
             marker: marker::PhantomData,
         }
     }
 }
 
-impl<'a, T: Lense<'a> + SizedLense> Iterator for Iter<'a, T> {
-    type Item = T::Ref;
+impl<'a, S, T: Lense<'a, S> + SizedLense> Iterator for Iter<T, S> {
+    type Item = T::Ret;
 
     fn next(&mut self) -> Option<Self::Item> {
         T::lense(&mut self.cursor).ok()
-    }
-}
-
-/// Mutable iterator
-struct IterMut<'a, T: SizedLense> {
-    cursor: Cursor<&'a mut [u8]>,
-    marker: marker::PhantomData<T>,
-}
-
-impl<'a, T: SizedLense> IterMut<'a, T> {
-    fn new(c: &'a mut [u8]) -> Self {
-        IterMut {
-            cursor: Cursor::new(c),
-            marker: marker::PhantomData,
-        }
-    }
-}
-
-impl<'a, T: Lense<'a> + SizedLense> Iterator for IterMut<'a, T> {
-    type Item = T::Mut;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        T::lense_mut(&mut self.cursor).ok()
     }
 }

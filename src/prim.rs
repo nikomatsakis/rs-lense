@@ -1,6 +1,7 @@
 pub unsafe trait Primitive {}
 pub unsafe trait SizedLense {
     fn size() -> usize;
+    // Does not account for padding yet..
 }
 
 // unsigned

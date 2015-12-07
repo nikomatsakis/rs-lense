@@ -44,7 +44,7 @@ mod slice;
 mod dsl;
 
 pub use aligned::Aligned;
-pub use cur::Cursor;
+pub use cur::{Cursor, RefMut};
 pub use lense::Lense;
 pub use prim::{Primitive, SizedLense};
 
@@ -54,8 +54,9 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub enum Error {
     /// Length check failed by n
     ExpectedBytes(usize),
-    /// Slice expected more bytes
-    OutOfBounds(usize),
     /// Enum or union tag is invalid
     InvalidTag(u8),
 }
+
+pub enum Ref {}
+pub enum Mut {}

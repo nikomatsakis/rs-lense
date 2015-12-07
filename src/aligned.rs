@@ -11,14 +11,14 @@ fn div_up(n: usize, m: usize) -> usize {
 /// 8-byte aligned Deref<Target=[u8]>
 pub struct Aligned {
     vec: Vec<u64>,
-    len: usize,
+    capacity: usize,
 }
 
 impl Aligned {
-    pub fn new(cap: usize) -> Self {
+    pub fn new(n: usize) -> Self {
         Aligned {
-            vec: vec![0; div_up(cap, 8)],
-            len: cap,
+            vec: vec![0; div_up(n, 8)],
+            capacity: n,
         }
     }
 }
@@ -28,7 +28,7 @@ impl ops::Deref for Aligned {
 
     fn deref(&self) -> &Self::Target {
         unsafe {
-            slice::from_raw_parts(self.vec.as_ptr() as *const u8, self.len)
+            slice::from_raw_parts(self.vec.as_ptr() as *const u8, self.capacity)
         }
     }
 }
@@ -36,14 +36,7 @@ impl ops::Deref for Aligned {
 impl ops::DerefMut for Aligned {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
-            slice::from_raw_parts_mut(self.vec.as_mut_ptr() as *mut u8, self.len)
+            slice::from_raw_parts_mut(self.vec.as_mut_ptr() as *mut u8, self.capacity)
         }
     }
-}
-
-#[test]
-fn size() {
-    let v = Aligned::new(9);
-    assert_eq!(v.len(), 9);
-    assert_eq!(v.vec.len(), 2);
 }
