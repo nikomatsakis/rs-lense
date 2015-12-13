@@ -1,26 +1,34 @@
 use std::{marker, ops};
 
-use {Lense, Cursor, Result, SizedLense, DstExt};
+use {AlignedLense, Cursor, DstExt, Lense, Result, SizedLense};
 
 /// Vector for sized lenses
-unsafe impl<'a, T: Lense<'a, S> + SizedLense, S> Lense<'a, S> for Vec<T>
-    where S: ops::Deref<Target=[u8]>
+unsafe impl<T, S> Lense<S> for Vec<T>
+    where T: Lense<S> + AlignedLense,
+          S: ops::Deref<Target=[u8]>
 {
     type Ret = Iter<T, S>;
 
     fn lense(c: &mut Cursor<S>) -> Result<Self::Ret> {
-        let l = *try!(<u16>::lense(c)) as usize * T::size();
+        let l = try!(<u16>::lense(c)).get() as usize * T::size();
         c.advance(l as u64).map(Iter::new)
     }
 }
 
-impl<'a, T: Lense<'a, S> + SizedLense, S> DstExt<'a, S, T> for Vec<T>
-    where S: ops::Deref<Target=[u8]> + ops::DerefMut
+impl<T, S> DstExt<S, T> for Vec<T>
+    where T: Lense<S> + AlignedLense,
+          S: ops::Deref<Target=[u8]>
 {
     type Ret = Iter<T, S>;
 
+    fn set_length(c: &mut Cursor<S>, l: u16) -> Result<Self::Ret>
+        where S: ops::DerefMut
+    {
+        try!(<u16>::lense(c)).set(l);
+        Self::with_length(c, l)
+    }
+
     fn with_length(c: &mut Cursor<S>, l: u16) -> Result<Self::Ret> {
-        *try!(<u16>::lense(c)) = l;
         c.advance((l as usize * T::size()) as u64).map(Iter::new)
     }
 }
@@ -40,7 +48,9 @@ impl<T: SizedLense, S> Iter<T, S> {
     }
 }
 
-impl<'a, S, T: Lense<'a, S> + SizedLense> Iterator for Iter<T, S> {
+impl<S, T> Iterator for Iter<T, S>
+    where T: Lense<S> + SizedLense
+{
     type Item = T::Ret;
 
     fn next(&mut self) -> Option<Self::Item> {

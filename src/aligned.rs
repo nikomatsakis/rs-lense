@@ -15,11 +15,12 @@ pub struct Aligned {
 }
 
 impl Aligned {
-    pub fn new(n: usize) -> Self {
-        Aligned {
-            vec: vec![0; div_up(n, 8)],
-            capacity: n,
-        }
+    pub fn new(c: usize) -> Self {
+        Aligned::from_vec(vec![0; div_up(c, 8)], c)
+    }
+
+    pub fn from_vec(v: Vec<u64>, c: usize) -> Self {
+        Aligned { vec: v, capacity: c }
     }
 }
 

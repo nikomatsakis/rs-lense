@@ -1,17 +1,21 @@
 
 use std::{marker, mem, ops, slice};
 
-use {Primitive, Result, Error};
+use {Endian, Error, Result};
+use tag::{BoolGuard, LenseTag};
 
 /// Cursor state for seeking into [u8] slices
 pub struct Cursor<S> {
     cur:   *mut u8,
     end:   *mut u8,
     waste: usize,
-    marker: marker::PhantomData<*mut S>,
+    tag:   Option<LenseTag<S>>,
+    m: marker::PhantomData<*mut S>,
 }
 
-impl<S> ops::Deref for Cursor<S> where S: ops::Deref<Target=[u8]> {
+impl<S> ops::Deref for Cursor<S>
+    where S: ops::Deref<Target=[u8]>
+{
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -21,7 +25,9 @@ impl<S> ops::Deref for Cursor<S> where S: ops::Deref<Target=[u8]> {
     }
 }
 
-impl<S> ops::DerefMut for Cursor<S> where S: ops::Deref<Target=[u8]> + ops::DerefMut {
+impl<S> ops::DerefMut for Cursor<S>
+    where S: ops::Deref<Target=[u8]> + ops::DerefMut
+{
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
             slice::from_raw_parts_mut(self.cur, self.end as usize - self.cur as usize)
@@ -29,7 +35,9 @@ impl<S> ops::DerefMut for Cursor<S> where S: ops::Deref<Target=[u8]> + ops::Dere
     }
 }
 
-impl<S> Cursor<S> where S: ops::Deref<Target=[u8]> {
+impl<S> Cursor<S>
+    where S: ops::Deref<Target=[u8]>
+{
     /// Start maintaining a cursor over some type that derefrences to [u8]
     pub fn new(s: S) -> Self {
         let p = s.as_ptr() as *mut u8;
@@ -37,7 +45,8 @@ impl<S> Cursor<S> where S: ops::Deref<Target=[u8]> {
             cur: p,
             end: unsafe { p.offset(s.len() as isize) },
             waste: 0,
-            marker: marker::PhantomData,
+            tag: None,
+            m: marker::PhantomData,
         }
     }
 
@@ -49,10 +58,30 @@ impl<S> Cursor<S> where S: ops::Deref<Target=[u8]> {
                 cur: mem::replace(&mut self.cur, p),
                 end: p,
                 waste: 0,
-                marker: self.marker,
+                tag: self.tag.clone(),
+                m: self.m,
             })
         } else {
             Err(Error::ExpectedBytes(n as usize))
+        }
+    }
+
+    pub fn set_tag(&mut self, t: LenseTag<S>) {
+        self.tag = Some(t);
+    }
+
+    pub fn tag_bits(&mut self, n: usize) -> Result<usize> {
+        match self.tag {
+            Some(ref mut t) => t.bits(n),
+            None => Err(Error::NoTagDefined),
+        }
+    }
+
+    /// Return a boolean bit from the tag if present
+    pub fn tag_bit(&mut self) -> Result<BoolGuard<S>> {
+        match self.tag {
+            Some(ref mut t) => t.bit(),
+            None => Err(Error::NoTagDefined),
         }
     }
 
@@ -79,7 +108,9 @@ impl<S> Cursor<S> where S: ops::Deref<Target=[u8]> {
         }
     }
 
-    pub fn dice<T: Primitive>(&mut self) -> Result<RefMut<T, S>> {
+    pub fn dice<T>(&mut self) -> Result<RefMut<T, S>>
+        where T: Endian
+    {
         try!(self.align::<T>());
         self.advance(mem::size_of::<T>() as u64).map(RefMut::new)
     }
@@ -87,28 +118,29 @@ impl<S> Cursor<S> where S: ops::Deref<Target=[u8]> {
 
 pub struct RefMut<T, S> {
     data: *mut T,
-    marker: marker::PhantomData<*mut S>,
+    m: marker::PhantomData<*mut S>,
 }
 
-impl<T, S> RefMut<T, S> {
-    pub fn new(c: Cursor<S>) -> Self where S: ops::Deref<Target=[u8]> {
+// Todo endianness on T
+impl<T, S> RefMut<T, S>
+    where T: Endian
+{
+    pub fn new(c: Cursor<S>) -> Self
+        where S: ops::Deref<Target=[u8]>
+    {
         RefMut {
             data: c.as_ptr() as *mut T,
-            marker: marker::PhantomData,
+            m: marker::PhantomData,
         }
     }
-}
 
-impl<T, S> ops::Deref for RefMut<T, S> where S: ops::Deref {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.data }
+    pub fn get(&self) -> T where T: Copy {
+        Endian::handle(unsafe { *self.data })
     }
-}
 
-impl<T, S> ops::DerefMut for RefMut<T, S> where S: ops::Deref + ops::DerefMut {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.data }
+    pub fn set(&mut self, t: T)
+        where S: ops::Deref + ops::DerefMut
+    {
+        unsafe { *self.data = Endian::handle(t) }
     }
 }

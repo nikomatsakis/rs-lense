@@ -60,3 +60,34 @@
 macro_rules! lense_dsl {
     () => {}
 }
+
+#[macro_export]
+macro_rules! lense_sized {
+    ($ident:ty, $($ty:ty),*) => {
+        unsafe impl<S> $crate::SizedLense for $ident
+            where S: ::std::ops::Deref<Target=[u8]>
+        {
+            fn size() -> usize { 0usize $(+ <$ty>::size())* }
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! lense_aligned {
+    ($ident:ident, $test:ident) => {
+        unsafe impl<S> $crate::AlignedLense for $ident<S>
+            where S: ::std::ops::Deref<Target=[u8]> {}
+
+        #[test]
+        fn $test() {
+            use $crate::{Lense, SizedLense, Aligned, Cursor};
+
+            let v = Aligned::new(<$ident<&[u8]>>::size() * 3);
+            let ref mut c = Cursor::new(&*v);
+            for _ in 0..3 {
+                $ident::lense(c).unwrap();
+            }
+            assert_eq!(c.waste(), 0);
+        }
+    }
+}

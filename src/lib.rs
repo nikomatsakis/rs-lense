@@ -30,32 +30,50 @@
 //!
 //! - Ideal struct, enum, and union DSL
 //!   - Fairly complicated macro inbound
-//! - Bitflags for 'booleans'
+//! - Bitflags for booleans and to condense two-state union tags like Option<T>, Result<T, F>
 
 mod aligned;
 mod cur;
 
+/// Primitive numeric types
 mod prim;
+/// Arrays and tuples
 mod lense;
+/// Vectors/iterators
 mod vec;
+/// Primitive slice
 mod slice;
-mod ext;
 
+/// Tag iterator (includes Option and Result types)
+mod tag;
+
+/// DstExt
+mod ext;
+/// Endian
+mod endian;
+
+/// Macro to assist with creating lense structs/enums
 #[macro_use]
 mod dsl;
 
 pub use aligned::Aligned;
 pub use cur::{Cursor, RefMut};
+pub use endian::Endian;
 pub use lense::Lense;
-pub use prim::{Primitive, SizedLense};
+pub use prim::{AlignedLense, Primitive, SizedLense};
 pub use ext::DstExt;
+pub use tag::{BoolGuard, Tag, padded};
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    /// Length check failed by n
+    /// Length check failed
     ExpectedBytes(usize),
+    /// Length check for LenseTag failed
+    ExpectedBits(usize),
     /// Enum or union tag is invalid
-    InvalidTag(u8),
+    InvalidTag(usize),
+    /// No tag was defined, but the lense type attempted to use one
+    NoTagDefined,
 }

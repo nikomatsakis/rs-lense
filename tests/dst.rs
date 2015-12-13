@@ -1,6 +1,6 @@
 extern crate lense;
 
-use lense::{Aligned, Cursor, Lense, DstExt};
+use lense::{Aligned, Cursor, DstExt, Lense};
 
 #[test]
 fn write_then_read_slice() {
@@ -9,12 +9,12 @@ fn write_then_read_slice() {
     { // writer
         let ref mut c = Cursor::new(&mut *v);
 
-        let mut slice = <[u8]>::with_length(c, 4).unwrap();
+        let mut slice = <[u8]>::set_length(c, 4).unwrap();
         let mut tail = <u16>::lense(c).unwrap();
         for (n, mut a) in slice.iter_mut().enumerate() {
             *a = n as u8;
         }
-        *tail = 0x0605;
+        tail.set(0x0605);
     }
 
     // reader
@@ -26,7 +26,7 @@ fn write_then_read_slice() {
 
     // Assert data is read as written.
     assert_eq!(&*s.unwrap(), &[0, 1, 2, 3]);
-    assert_eq!(*t.unwrap(), 0x0605);
+    assert_eq!(t.unwrap().get(), 0x0605);
 
     // Everything is aligned; no waste!
     assert_eq!(c.waste(), 0);
@@ -40,12 +40,12 @@ fn write_then_read_vec() {
     { // writer
         let ref mut c = Cursor::new(&mut *v);
 
-        let vec = <Vec<u8>>::with_length(c, 4).unwrap();
+        let vec = <Vec<u8>>::set_length(c, 4).unwrap();
         let mut tail = <u16>::lense(c).unwrap();
         for (n, mut a) in vec.enumerate() {
-            *a = n as u8;
+            a.set(n as u8);
         }
-        *tail = 0x0605;
+        tail.set(0x0605);
     }
 
     // reader
@@ -57,10 +57,10 @@ fn write_then_read_vec() {
 
     // Assert data is read as written.
     assert_eq!(&*s.unwrap()
-                  .map(|x| *x)
+                  .map(|x| x.get())
                   .collect::<Vec<_>>(),
                &[0, 1, 2, 3]);
-    assert_eq!(*t.unwrap(), 0x0605);
+    assert_eq!(t.unwrap().get(), 0x0605);
 
     // Everything is aligned; no waste!
     assert_eq!(c.waste(), 0);
