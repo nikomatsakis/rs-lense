@@ -1,58 +1,31 @@
-
+#[macro_use]
 extern crate lense;
 
-use std::ops::Deref;
-use lense::{Aligned, Cursor, Lense, Result as LResult, SizedLense, Tag};
+use lense::{Aligned, Cursor, Lense, Ref, Result as LResult, SizedLense, Tag};
 
-struct Alice<S>
-    where S: Deref<Target=[u8]>
-{
-    a: <u8 as Lense<S>>::Ret,
-    b: <(u8, u16) as Lense<S>>::Ret,
-    c: <[u32] as Lense<S>>::Ret,
-    d: <Vec<u64> as Lense<S>>::Ret,
-}
-
-enum Bob<S>
-    where S: Deref<Target=[u8]>
-{
-    A(<u8 as Lense<S>>::Ret),
-    B(<u8 as Lense<S>>::Ret, <u16 as Lense<S>>::Ret),
-}
-
-enum Carol<S>
-    where S: Deref<Target=[u8]>
-{
-    Alice(<Alice<S> as Lense<S>>::Ret),
-    Bob(<Bob<S> as Lense<S>>::Ret),
-}
-
-unsafe impl<S> Lense<S> for Alice<S>
-    where S: Deref<Target=[u8]>
-{
-    type Ret = Self;
-
-    fn lense(c: &mut Cursor<S>) -> LResult<Self::Ret> {
-        Ok(Alice {
-            a: try!(<u8>::lense(c)),
-            b: try!(<(u8, u16)>::lense(c)),
-            c: try!(<[u32]>::lense(c)),
-            d: try!(<Vec<u64>>::lense(c)),
-        })
+lense_dsl!(@DSL
+    struct Alice {
+        a: u8,
+        b: (u8, u16),
+        c: [u32],
+        d: Vec<u64>,
     }
-}
 
-unsafe impl<S> SizedLense for Bob<S>
-    where S: Deref<Target=[u8]>
-{
-    fn size() -> usize {
-        *[u8::size(), u8::size() + u16::size()]
-            .iter().max().unwrap()
+    #[sized]
+    enum Bob {
+        A(u8),
+        B(u8, u16),
     }
-}
 
+    enum Carol {
+        Alice(@Alice),
+        Bob(@Bob),
+    }
+);
+
+// Manually implement Lense for Bob until enum impls are supported
 unsafe impl<S> Lense<S> for Bob<S>
-    where S: Deref<Target=[u8]>
+    where S: Ref
 {
     type Ret = Self;
 
@@ -67,9 +40,9 @@ unsafe impl<S> Lense<S> for Bob<S>
     }
 }
 
-
+// Manually implement Lense for Bob until enum impls are supported
 unsafe impl<S> Lense<S> for Carol<S>
-    where S: Deref<Target=[u8]>
+    where S: Ref
 {
     type Ret = Self;
 

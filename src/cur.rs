@@ -1,7 +1,6 @@
-
 use std::{marker, mem, ops, slice};
 
-use {Endian, Error, Result};
+use {Endian, Error, Mut, Ref, Result};
 use tag::{BoolGuard, LenseTag};
 
 /// Cursor state for seeking into [u8] slices
@@ -13,9 +12,7 @@ pub struct Cursor<S> {
     m: marker::PhantomData<*mut S>,
 }
 
-impl<S> ops::Deref for Cursor<S>
-    where S: ops::Deref<Target=[u8]>
-{
+impl<S> ops::Deref for Cursor<S> where S: Ref {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -25,9 +22,7 @@ impl<S> ops::Deref for Cursor<S>
     }
 }
 
-impl<S> ops::DerefMut for Cursor<S>
-    where S: ops::Deref<Target=[u8]> + ops::DerefMut
-{
+impl<S> ops::DerefMut for Cursor<S> where S: Mut {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
             slice::from_raw_parts_mut(self.cur, self.end as usize - self.cur as usize)
@@ -35,9 +30,7 @@ impl<S> ops::DerefMut for Cursor<S>
     }
 }
 
-impl<S> Cursor<S>
-    where S: ops::Deref<Target=[u8]>
-{
+impl<S> Cursor<S> where S: Ref {
     /// Start maintaining a cursor over some type that derefrences to [u8]
     pub fn new(s: S) -> Self {
         let p = s.as_ptr() as *mut u8;
@@ -108,9 +101,7 @@ impl<S> Cursor<S>
         }
     }
 
-    pub fn dice<T>(&mut self) -> Result<RefMut<T, S>>
-        where T: Endian
-    {
+    pub fn dice<T>(&mut self) -> Result<RefMut<T, S>> where T: Endian {
         try!(self.align::<T>());
         self.advance(mem::size_of::<T>() as u64).map(RefMut::new)
     }
@@ -123,11 +114,9 @@ pub struct RefMut<T, S> {
 
 // Todo endianness on T
 impl<T, S> RefMut<T, S>
-    where T: Endian
+    where T: Endian, S: Ref
 {
-    pub fn new(c: Cursor<S>) -> Self
-        where S: ops::Deref<Target=[u8]>
-    {
+    pub fn new(c: Cursor<S>) -> Self {
         RefMut {
             data: c.as_ptr() as *mut T,
             m: marker::PhantomData,
@@ -138,9 +127,7 @@ impl<T, S> RefMut<T, S>
         Endian::handle(unsafe { *self.data })
     }
 
-    pub fn set(&mut self, t: T)
-        where S: ops::Deref + ops::DerefMut
-    {
+    pub fn set(&mut self, t: T) where S: Mut {
         unsafe { *self.data = Endian::handle(t) }
     }
 }

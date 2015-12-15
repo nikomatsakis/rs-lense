@@ -1,6 +1,4 @@
-use std::{mem, ops};
-
-use {AlignedLense, Cursor, Endian, Primitive, RefMut, Result, SizedLense};
+use {AlignedLense, Cursor, Endian, Ref, RefMut, Result, SizedLense};
 
 /// Compose lense-safe primitives
 pub unsafe trait Lense<S> {
@@ -9,10 +7,7 @@ pub unsafe trait Lense<S> {
     fn lense(&mut Cursor<S>) -> Result<Self::Ret>;
 }
 
-unsafe impl<P, S> Lense<S> for P
-    where P: Endian,
-          S: ops::Deref<Target=[u8]>
-{
+unsafe impl<P, S> Lense<S> for P where P: Endian, S: Ref {
     type Ret = RefMut<P, S>;
 
     fn lense(c: &mut Cursor<S>) -> Result<Self::Ret> {
@@ -27,10 +22,10 @@ macro_rules! impls {
 
     (()) => {};
     (() $void:tt $($tail:ident)*) => {
+        unsafe impl<$($tail: AlignedLense),*> AlignedLense for ($($tail,)*) {}
         unsafe impl<$($tail: SizedLense),*> SizedLense for ($($tail,)*) {
             fn size() -> usize { 0usize $(+ $tail::size())* }
         }
-        unsafe impl<$($tail: AlignedLense),*> AlignedLense for ($($tail,)*) {}
         unsafe impl<S, $($tail: Lense<S>),*> Lense<S> for ($($tail,)*) {
             type Ret = ($($tail::Ret,)*);
 
@@ -43,10 +38,10 @@ macro_rules! impls {
 
     ([]) => {};
     ([] ($n:expr) $(($m:expr))*) => {
+        unsafe impl<L: AlignedLense> AlignedLense for [L; $n] {}
         unsafe impl<L: SizedLense> SizedLense for [L; $n] {
             fn size() -> usize { L::size() * $n }
         }
-        unsafe impl<L: AlignedLense> AlignedLense for [L; $n] {}
         unsafe impl<L: Lense<S>, S> Lense<S> for [L; $n] {
             type Ret = [L::Ret; $n];
 

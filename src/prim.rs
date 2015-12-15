@@ -6,11 +6,9 @@ pub unsafe trait Primitive {}
 /// Unsafe because it does not account for padding?
 pub unsafe trait SizedLense {
     fn size() -> usize;
-    // Does not account for padding yet..
 }
 
-/// Unsafe trait marker for aligned asserted lenses. Do not manually implement! Must use
-/// lense_aligned!(..)
+/// Use the lense_aligned! macro!
 pub unsafe trait AlignedLense: SizedLense {}
 
 unsafe impl<P> SizedLense for P

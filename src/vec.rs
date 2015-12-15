@@ -1,12 +1,9 @@
-use std::{marker, ops};
+use std::marker;
 
-use {AlignedLense, Cursor, DstExt, Lense, Result, SizedLense};
+use {AlignedLense, Cursor, DstExt, Lense, Mut, Ref, Result, SizedLense};
 
 /// Vector for sized lenses
-unsafe impl<T, S> Lense<S> for Vec<T>
-    where T: Lense<S> + AlignedLense,
-          S: ops::Deref<Target=[u8]>
-{
+unsafe impl<T, S> Lense<S> for Vec<T> where T: Lense<S> + AlignedLense, S: Ref {
     type Ret = Iter<T, S>;
 
     fn lense(c: &mut Cursor<S>) -> Result<Self::Ret> {
@@ -15,15 +12,10 @@ unsafe impl<T, S> Lense<S> for Vec<T>
     }
 }
 
-impl<T, S> DstExt<S, T> for Vec<T>
-    where T: Lense<S> + AlignedLense,
-          S: ops::Deref<Target=[u8]>
-{
+impl<T, S> DstExt<S, T> for Vec<T> where T: Lense<S> + AlignedLense, S: Ref {
     type Ret = Iter<T, S>;
 
-    fn set_length(c: &mut Cursor<S>, l: u16) -> Result<Self::Ret>
-        where S: ops::DerefMut
-    {
+    fn set_length(c: &mut Cursor<S>, l: u16) -> Result<Self::Ret> where S: Mut {
         try!(<u16>::lense(c)).set(l);
         Self::with_length(c, l)
     }
@@ -34,12 +26,12 @@ impl<T, S> DstExt<S, T> for Vec<T>
 }
 
 /// Immutable iterator
-struct Iter<T: SizedLense, S> {
+struct Iter<T, S> where T: SizedLense {
     cursor: Cursor<S>,
     marker: marker::PhantomData<*mut T>,
 }
 
-impl<T: SizedLense, S> Iter<T, S> {
+impl<T, S> Iter<T, S> where T: SizedLense {
     fn new(c: Cursor<S>) -> Self {
         Iter {
             cursor: c,
@@ -48,9 +40,7 @@ impl<T: SizedLense, S> Iter<T, S> {
     }
 }
 
-impl<S, T> Iterator for Iter<T, S>
-    where T: Lense<S> + SizedLense
-{
+impl<S, T> Iterator for Iter<T, S> where T: Lense<S> + SizedLense {
     type Item = T::Ret;
 
     fn next(&mut self) -> Option<Self::Item> {

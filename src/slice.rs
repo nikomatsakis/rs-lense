@@ -1,11 +1,8 @@
 use std::{marker, mem, ops, slice};
 
-use {Cursor, DstExt, Lense, Primitive, Result};
+use {Cursor, DstExt, Lense, Mut, Primitive, Ref, Result};
 
-unsafe impl<L, S> Lense<S> for [L]
-    where L: Primitive,
-          S: ops::Deref<Target=[u8]>
-{
+unsafe impl<L, S> Lense<S> for [L] where L: Primitive, S: Ref {
     type Ret = Slice<L, S>;
 
     fn lense(c: &mut Cursor<S>) -> Result<Self::Ret> {
@@ -16,15 +13,10 @@ unsafe impl<L, S> Lense<S> for [L]
     }
 }
 
-impl<L, S> DstExt<S, L> for [L]
-    where L: Primitive + Lense<S>,
-          S: ops::Deref<Target=[u8]>
-{
+impl<L, S> DstExt<S, L> for [L] where L: Primitive + Lense<S>, S: Ref {
     type Ret = Slice<L, S>;
 
-    fn set_length(c: &mut Cursor<S>, l: u16) -> Result<Self::Ret>
-        where S: ops::DerefMut
-    {
+    fn set_length(c: &mut Cursor<S>, l: u16) -> Result<Self::Ret> where S: Mut {
         try!(<u16>::lense(c)).set(l);
         Self::with_length(c, l)
     }
@@ -35,18 +27,13 @@ impl<L, S> DstExt<S, L> for [L]
     }
 }
 
-pub struct Slice<P: Primitive, S>
-    where S: ops::Deref<Target=[u8]>
-{
+pub struct Slice<P, S> where P: Primitive, S: Ref {
     cursor: Cursor<S>,
     length: usize,
     marker: marker::PhantomData<*mut P>,
 }
 
-impl<P, S> Slice<P, S>
-    where P: Primitive,
-          S: ops::Deref<Target=[u8]>
-{
+impl<P, S> Slice<P, S> where P: Primitive, S: Ref {
     fn new(c: Cursor<S>, l: usize) -> Self {
         Slice {
             cursor: c,
@@ -56,10 +43,7 @@ impl<P, S> Slice<P, S>
     }
 }
 
-impl<P, S> ops::Deref for Slice<P, S>
-    where P: Primitive,
-          S: ops::Deref<Target=[u8]>
-{
+impl<P, S> ops::Deref for Slice<P, S> where P: Primitive, S: Ref {
     type Target = [P];
 
     fn deref(&self) -> &Self::Target {
@@ -69,10 +53,7 @@ impl<P, S> ops::Deref for Slice<P, S>
     }
 }
 
-impl<P, S> ops::DerefMut for Slice<P, S>
-    where P: Primitive,
-          S: ops::Deref<Target=[u8]> + ops::DerefMut
-{
+impl<P, S> ops::DerefMut for Slice<P, S> where P: Primitive, S: Mut {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
             slice::from_raw_parts_mut(self.cursor.as_mut_ptr() as *mut _, self.length)

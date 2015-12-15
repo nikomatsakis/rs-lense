@@ -1,13 +1,10 @@
-use std::{marker, mem, ops, result};
-use {Cursor, Error, Lense, Primitive, Result};
+use std::{marker, mem, result};
+use {Cursor, Error, Lense, Mut, Primitive, Ref, Result};
 
 /// Set the lense tag for the cursor!
 pub struct Tag<T: Primitive>(marker::PhantomData<T>);
 
-unsafe impl<T, S> Lense<S> for Tag<T>
-    where T: Primitive,
-          S: ops::Deref<Target=[u8]>
-{
+unsafe impl<T, S> Lense<S> for Tag<T> where T: Primitive, S: Ref {
     type Ret = ();
 
     fn lense(c: &mut Cursor<S>) -> Result<Self::Ret> {
@@ -33,9 +30,7 @@ impl<S> Clone for LenseTag<S> {
 }
 
 // TODO: Alignment for bits(n)
-impl<S> LenseTag<S>
-    where S: ops::Deref<Target=[u8]>
-{
+impl<S> LenseTag<S> where S: Ref {
     fn new(c: Cursor<S>) -> Self {
         LenseTag {
             cur: c.as_ptr() as *mut u8,
@@ -84,10 +79,7 @@ impl<S> LenseTag<S>
 
 
 /// Union lense option
-unsafe impl<T, S> Lense<S> for Option<T>
-    where T: Lense<S>,
-          S: ops::Deref<Target=[u8]>
-{
+unsafe impl<T, S> Lense<S> for Option<T> where T: Lense<S>, S: Ref {
     type Ret = Option<T::Ret>;
 
     fn lense(c: &mut Cursor<S>) -> Result<Self::Ret> {
@@ -103,7 +95,7 @@ unsafe impl<T, S> Lense<S> for Option<T>
 unsafe impl<L, R, S> Lense<S> for result::Result<L, R>
     where L: Lense<S>,
           R: Lense<S>,
-          S: ops::Deref<Target=[u8]>
+          S: Ref
 {
     type Ret = result::Result<L::Ret, R::Ret>;
 
@@ -117,8 +109,8 @@ unsafe impl<L, R, S> Lense<S> for result::Result<L, R>
 }
 
 pub mod padded {
-    use std::{marker, ops, option, result};
-    use {Lense, Cursor, Result as Res, SizedLense};
+    use std::{marker, option, result};
+    use {Cursor, Lense, Ref, Result as Res, SizedLense};
 
     pub struct Option<T>(marker::PhantomData<T>);
     pub struct Result<T, F>(marker::PhantomData<(T, F)>);
@@ -126,7 +118,7 @@ pub mod padded {
     /// Union lense option
     unsafe impl<T, S> Lense<S> for Option<T>
         where T: Lense<S> + SizedLense,
-              S: ops::Deref<Target=[u8]>
+              S: Ref
     {
         type Ret = option::Option<T::Ret>;
 
@@ -152,7 +144,7 @@ pub mod padded {
     unsafe impl<L, R, S> Lense<S> for Result<L, R>
         where L: Lense<S> + SizedLense,
               R: Lense<S> + SizedLense,
-              S: ops::Deref<Target=[u8]>,
+              S: Ref
     {
         type Ret = result::Result<L::Ret, R::Ret>;
 
@@ -169,9 +161,7 @@ pub mod padded {
 }
 
 /// Tag managed boolean
-unsafe impl<S> Lense<S> for bool
-    where S: ops::Deref<Target=[u8]>
-{
+unsafe impl<S> Lense<S> for bool where S: Ref {
     type Ret = BoolGuard<S>;
 
     fn lense(c: &mut Cursor<S>) -> Result<Self::Ret> {
@@ -186,9 +176,7 @@ pub struct BoolGuard<S> {
     marker: marker::PhantomData<S>
 }
 
-impl<S> BoolGuard<S>
-    where S: ops::Deref<Target=[u8]>
-{
+impl<S> BoolGuard<S> where S: Ref {
     fn new(tag: *mut u8, mask: u8) -> Self {
         BoolGuard {
             tag: tag,
@@ -205,9 +193,7 @@ impl<S> BoolGuard<S>
     }
 
     /// Set the boolean in the shared tag
-    pub fn set(&mut self, b: bool)
-        where S: ops::DerefMut
-    {
+    pub fn set(&mut self, b: bool) where S: Mut {
         unsafe {
             if b {
                 *self.tag |= self.mask
